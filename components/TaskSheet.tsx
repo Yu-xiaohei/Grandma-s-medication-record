@@ -175,7 +175,7 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
                     onClick={() => toggle(item.id)}
                     aria-pressed={st === "done"}
                     aria-label={`${item.label}，${st === "done" ? "已完成，点击撤销" : "点击打勾"}`}
-                    style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, textAlign: "left" }}
+                    style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, minHeight: 44, textAlign: "left" }}
                   >
                     <span className="box" aria-hidden="true">
                       {st === "skipped" ? (

@@ -662,7 +662,16 @@ function Toggle({ t, d, on, set }: { t: string; d: string; on: boolean; set: (v:
         <div className="t">{t}</div>
         <div className="d">{d}</div>
       </div>
-      <button type="button" className="switch" role="switch" aria-checked={on} aria-label={t} onClick={() => set(!on)} />
+      <button
+        type="button"
+        className="switch-hit"
+        role="switch"
+        aria-checked={on}
+        aria-label={t}
+        onClick={() => set(!on)}
+      >
+        <span className="switch" aria-hidden="true" />
+      </button>
     </div>
   );
 }

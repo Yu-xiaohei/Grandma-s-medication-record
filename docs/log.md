@@ -1,0 +1,25 @@
+# 变更记录
+
+格式：`[YY-MM-DD HH:mm] [新增/删除/修改/修复/优化] 简述`（北京时间）
+
+## 2026-11-22
+
+[26-11-22 18:25] [新增] 项目初始化：Next.js 16.4.6 静态导出骨架、GitHub Pages workflow。
+
+[26-11-22 20:24] [新增] 首次上线 `e067e1d`：前台（口令门 / 主卡 / 打卡抽屉 / 今日列表 / 安全红线 / 公告）、后台四页签（今天记录 / 排程设置 / 公告设置 / 历史记录）、Cloudflare Worker（13 条路由）、D1 7 张表、离线 SW 与打卡队列。排程按 Excel Sheet 1 的 16 个时间点（610 ml 水版），旧版「单次 ≤200 ml」不再体现。
+
+[26-11-22 20:59] [新增] 交接文档 `docs/handoff-20261122.md`。
+
+[26-11-22 21:12] [新增] 后端上线：Cloudflare D1 `grandma_medication`（id `656d5a2b-fcff-4d60-a7c0-acb1f57a4b57`，回填进 `worker/wrangler.toml`）、三串随机 Secrets（`TOKEN_SECRET` / `PASSWORD_PEPPER` / `SETUP_TOKEN`）、建表、`wrangler deploy` → `https://grandma-medication-api.yu-xiaohei.workers.dev`。`/api/setup` 初始化管理员 `Admin` 与口令 `0000` 成功。
+
+[26-11-22 21:14] [修改] GitHub Actions 变量 `API_BASE` 指向 Worker，重跑 Pages workflow（run 45026423026）成功；确认线上 JS chunk 已内嵌 Worker 地址。
+
+[26-11-22 21:20] [新增] SETUP_TOKEN 轮换为不留存的随机值，`/api/setup` 事实上永久封闭。
+
+[26-11-22 21:24] [修复] 线上验收发现：主卡在「当前项已完成但当天仍有未完成项」时误显示「今天全部记好了」。改为 `missedCount > 0 ? "这一项已完成" : "今天全部记好了"`（`components/Today.tsx`），commit `6dc3702`，已推送并复验。
+
+[26-11-22 21:28] [优化] 线上验收通过项：口令门 0000 → bootstrap 16 项；打卡全链路（软确认 → 落库 → 后台「已完成」）；服务端 5 分钟规则（`too_early_missed` 409）、跨天锁定（`locked_day` 409）、未授权 401；断网刷新仍可用 + 打卡入队、恢复网络约 60 秒内自动补传并清空队列；公告发布 / 显示 / 关闭不重复 / 归档；管理员 token 75 秒后返回 `x-renew-token`；改 PIN / 改密码接口可用；360 / 390 / 430px 无横向溢出、无可点元素 < 40px、无 console 报错。
+
+[26-11-22 21:30] [修改] 更新 `docs/handoff-20261122.md` 为「已上线」版本：现状、线上验收证据、日常维护命令、账号与密钥现状、非阻塞欠账。
+
+[26-11-22 21:31] [删除] 清理线上测试数据（records / record_events / login_attempts 清零，验收公告归档），只保留 1 个管理员与 1 条排程快照。

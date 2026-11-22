@@ -1146,7 +1146,7 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
   const { ask, node: confirmNode } = useConfirm();
 
   const pinOk = pin.length === 4 && pin === pin2;
-  const passOk = pass.length >= 10 && pass === pass2;
+  const passOk = pass.length >= 8 && pass === pass2;
 
   const savePin = async () => {
     if (!pinOk) return;
@@ -1257,7 +1257,7 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
       <div className="card">
         <div className="sub-head">
           <div className="st">管理员密码</div>
-          <span className="badge">至少 10 位</span>
+          <span className="badge">至少 8 位</span>
         </div>
         <p className="hint" style={{ marginTop: -4 }}>用来登录这个后台，改完请记牢。</p>
 
@@ -1293,8 +1293,8 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
             onChange={(e) => setPass2(e.target.value)}
           />
         </div>
-        <p className={`pw-req ${pass2 && pass !== pass2 ? "bad" : pass && pass.length < 10 ? "bad" : ""}`}>
-          {pass2 && pass !== pass2 ? "两次输入不一致" : pass && pass.length < 10 ? `还差 ${10 - pass.length} 位` : "至少 10 位，建议字母加数字"}
+        <p className={`pw-req ${pass2 && pass !== pass2 ? "bad" : pass && pass.length < 8 ? "bad" : ""}`}>
+          {pass2 && pass !== pass2 ? "两次输入不一致" : pass && pass.length < 8 ? `还差 ${8 - pass.length} 位` : "至少 8 位，建议字母加数字"}
         </p>
         <button
           type="button"

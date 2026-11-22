@@ -409,7 +409,7 @@ async function route(request: Request, env: Env, path: string, url: URL): Promis
     const shownName = String(body.username ?? "Admin").trim() || "Admin";
     const password = String(body.password ?? "Admin12345678");
     const pin = String(body.pin ?? "0000");
-    if (password.length < 10) return bad("weak_password", "密码至少 10 位");
+    if (password.length < 8) return bad("weak_password", "密码至少 8 位");
     if (!/^\d{4,8}$/.test(pin)) return bad("bad_pin_format", "口令需要 4~8 位数字");
 
     const salt = randomSalt();
@@ -746,7 +746,7 @@ async function route(request: Request, env: Env, path: string, url: URL): Promis
   if (path === "/api/admin/password" && method === "POST") {
     const body = (await request.json().catch(() => ({}))) as { password?: string };
     const password = String(body.password ?? "");
-    if (password.length < 10) return bad("weak_password", "密码至少 10 位");
+    if (password.length < 8) return bad("weak_password", "密码至少 8 位");
     const salt = randomSalt();
     const hash = await digest(env.PASSWORD_PEPPER, salt, "admin", password);
     await env.DB.prepare("UPDATE admins SET password_hash = ?, salt = ?, updated_at = ? WHERE username = 'admin'")

@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+.wrangler/
+.env
+.env.*
+!.env.example
+*.log
+.agent-tmp/
+next-env.d.ts
+tsconfig.tsbuildinfo
+.DS_Store
+worker/.dev.vars
+worker/node_modules/

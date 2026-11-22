@@ -1,0 +1,13 @@
+{
+  "name": "用药管理器",
+  "short_name": "用药",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7fa",
+  "theme_color": "#0e8f7f",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

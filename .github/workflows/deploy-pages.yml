@@ -1,0 +1,63 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Resolve base path
+        id: base
+        run: |
+          # 绑了自定义域名就在 Variables 里加 BASE_PATH = /（根路径）；否则用仓库名作为子路径
+          BASE="${{ vars.BASE_PATH }}"
+          if [ -z "$BASE" ]; then BASE="/${{ github.event.repository.name }}"; fi
+          echo "value=${BASE%/}" >> "$GITHUB_OUTPUT"
+
+      # 后端地址放在仓库 Variables 里（Settings → Secrets and variables → Actions → Variables）：
+      #   API_BASE = https://grandma-medication-api.<你的子域>.workers.dev
+      - name: Build static site
+        env:
+          NEXT_PUBLIC_API_BASE: ${{ vars.API_BASE }}
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base.outputs.value }}
+        run: |
+          npm run build
+          touch out/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

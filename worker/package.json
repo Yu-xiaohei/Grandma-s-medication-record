@@ -1,0 +1,16 @@
+{
+  "name": "grandma-medication-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute grandma_medication --remote --file=src/schema.sql",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.9.0",
+    "wrangler": "^3.114.17"
+  }
+}

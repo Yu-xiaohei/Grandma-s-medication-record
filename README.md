@@ -29,7 +29,12 @@ scripts/        构建后生成离线预缓存清单
 - 一直没打卡：距离下一项只剩 70% 的间隔时，这一项自动记为未完成，主卡直接显示下一项。比例可以在后台调整（30~95）。
 - 断了网也能看（首次打开后会缓存），打卡先存在本机，联网自动上传。
 
-## 首次部署
+## 部署状态
+
+已经上线：Worker `https://grandma-medication-api.yu-xiaohei.workers.dev`，D1 `grandma_medication`。
+GitHub Actions 变量 `API_BASE` 指向该 Worker，推送到 `main` 会自动构建并发布 Pages。
+
+## 首次部署（换新环境时照着做）
 
 ### 1. 建 D1 数据库
 
@@ -109,3 +114,19 @@ ALLOWED_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
 
 - 时间表内容照搬《老人全天进食与用药时间表_手机版-新.xlsx》Sheet 1，总水量 610 ml、营养液 900 ml、辅食 300 ml。
 - 密码哈希用 HMAC + pepper，而不是 PBKDF2，是为了留在 Workers 免费版 CPU 额度内，安全强度按「家庭自用」设计。
+
+## 日常维护
+
+```powershell
+cd worker
+npx wrangler tail                                  # 线上日志
+npx wrangler deploy                                # 改完 Worker 后发布
+
+# 看最近记录
+npx wrangler d1 execute grandma_medication --remote --command "SELECT day, task_id, status FROM records ORDER BY day DESC, task_id LIMIT 20;"
+
+# 备份整库（建议每月一次，存到家里网盘）
+npx wrangler d1 export grandma_medication --remote --output=backup-$(Get-Date -Format yyyyMMdd).sql
+```
+
+前端口令和管理员密码在后台「排程设置 → 口令与密码」里改。`/api/setup` 初始化完就把 `SETUP_TOKEN` 换成不会保存的随机值了，等于永久关闭。

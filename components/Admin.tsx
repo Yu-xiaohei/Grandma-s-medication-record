@@ -1512,8 +1512,12 @@ function History({ today }: { today: string }) {
       if (!alive) return;
       setLoading(false);
       if (res.ok) {
-        setAll(res.data.records);
-        setTasksByDay(res.data.tasksByDay || {});
+        const tbd = res.data.tasksByDay || {};
+        // 那一天排程里已经没有的项（例如时间段被删掉）不再出现，计数也要一致
+        const keep = new Set<string>();
+        for (const [d, list] of Object.entries(tbd)) for (const t of list) keep.add(`${d}|${t.id}`);
+        setAll(res.data.records.filter((r) => keep.has(`${r.day}|${r.taskId}`)));
+        setTasksByDay(tbd);
       }
     })();
     return () => {

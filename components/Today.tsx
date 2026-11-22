@@ -237,7 +237,7 @@ export function Today() {
         <section className="glass hero" style={{ marginTop: 12 }}>
           <div className="hero-eyebrow">
             <span className="dot" aria-hidden="true" />
-            {focusPhase === "done" ? "今天全部记好了" : focusPhase === "missed" ? "这一项记为未完成" : "现在这一项"}
+            {focusPhase === "done" ? (missedCount > 0 ? "这一项已完成" : "今天全部记好了") : focusPhase === "missed" ? "这一项记为未完成" : "现在这一项"}
           </div>
 
           <div className="hero-time">

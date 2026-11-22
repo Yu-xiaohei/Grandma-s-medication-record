@@ -9,7 +9,7 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "grandma_medication"
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "656d5a2b-fcff-4d60-a7c0-acb1f57a4b57"
 
 [vars]
 ALLOWED_ORIGINS = "https://yu-xiaohei.github.io"

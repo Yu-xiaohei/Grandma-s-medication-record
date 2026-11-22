@@ -242,12 +242,17 @@ async function backfillAutoMissed(env: Env, day: string, tasks: Task[], settings
   }
   if (targets.length === 0) return;
   const now = new Date().toISOString();
+  // 当天被手动删掉（cleared）的项不再补记，否则历史里又冒出来
   const stmt = env.DB.prepare(
     `INSERT INTO records (day, task_id, status, items, vitals, note, source, updated_at, updated_by)
-     VALUES (?, ?, 'missed', '{}', NULL, ?, 'front', ?, 'system')
+     SELECT ?, ?, 'missed', '{}', NULL, ?, 'front', ?, 'system'
+     WHERE NOT EXISTS (
+       SELECT 1 FROM record_events
+       WHERE day = ? AND task_id = ? AND action = 'cleared'
+     )
      ON CONFLICT(day, task_id) DO NOTHING`,
   );
-  await env.DB.batch(targets.map((t) => stmt.bind(day, t.id, AUTO_MISS_NOTE, now)));
+  await env.DB.batch(targets.map((t) => stmt.bind(day, t.id, AUTO_MISS_NOTE, now, day, t.id)));
 }
 
 /* ------------------------------------------------------------------ */

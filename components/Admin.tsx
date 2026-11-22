@@ -6,7 +6,10 @@ import { addDays, dayLabel, todayKey } from "@/lib/time";
 import { AUTO_MISS_NOTE } from "@/lib/rules";
 import type { Announcement, Settings, Task, TaskItem, TaskRecord } from "@/lib/types";
 import { DEFAULT_TAGS } from "@/lib/types";
+import { Confirm } from "./Confirm";
+import type { ConfirmSpec } from "./Confirm";
 import {
+  IconChevron,
   IconChevronDown,
   IconCheck,
   IconEye,
@@ -17,7 +20,7 @@ import {
   IconTrash,
 } from "./Icons";
 
-type Tab = "today" | "plan" | "notice" | "history" | "settings" | "password";
+type Tab = "today" | "plan" | "history" | "settings";
 
 const EMPTY_SETTINGS: Settings = {
   dayStart: "00:00",
@@ -29,13 +32,18 @@ const EMPTY_SETTINGS: Settings = {
 };
 
 const TAB_LIST: [Tab, string][] = [
-  ["today", "今天记录"],
+  ["today", "今日记录"],
   ["plan", "排程设置"],
+  ["history", "历史记录"],
   ["settings", "常用设置"],
-  ["password", "改密码"],
-  ["notice", "公告"],
-  ["history", "历史"],
 ];
+
+/** 后台每一次会改数据的操作都先问一句 */
+function useConfirm() {
+  const [spec, setSpec] = useState<ConfirmSpec | null>(null);
+  const node = spec ? <Confirm spec={spec} onClose={() => setSpec(null)} /> : null;
+  return { ask: setSpec, node };
+}
 
 export function Admin() {
   const [authed, setAuthed] = useState(false);
@@ -184,10 +192,10 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [records, setRecords] = useState<TaskRecord[]>([]);
   const [settings, setSettings] = useState<Settings>(EMPTY_SETTINGS);
-  const [anns, setAnns] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ t: "ok" | "err"; m: string } | null>(null);
   const toastTimer = useRef<number | null>(null);
+  const { ask, node: confirmNode } = useConfirm();
 
   const notify = useCallback((t: "ok" | "err", m: string) => {
     setMsg({ t, m });
@@ -214,7 +222,6 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
       setTasks(res.data.tasks);
       setRecords(res.data.records);
       setSettings(res.data.settings);
-      setAnns(res.data.announcements);
     },
     [notify, onLogout],
   );
@@ -233,10 +240,28 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <a className="icon-btn" href="../">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => ask({ title: "打开前台？", text: "前台是给家里人和老人看的页面。", confirmLabel: "打开前台", cancelLabel: "留在后台", tone: "primary", onConfirm: () => { window.location.href = "../"; } })}
+          >
             前台
-          </a>
-          <button type="button" className="icon-btn" onClick={onLogout} aria-label="退出登录">
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="退出登录"
+            onClick={() =>
+              ask({
+                title: "退出管理后台？",
+                text: "退出后要重新输入用户名和密码。",
+                confirmLabel: "退出",
+                cancelLabel: "留在后台",
+                tone: "danger",
+                onConfirm: onLogout,
+              })
+            }
+          >
             <IconLogout size={16} />
           </button>
         </div>
@@ -244,7 +269,13 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
 
       <div className="tabs" role="tablist">
         {TAB_LIST.map(([k, label]) => (
-          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={tab === k}
+            onClick={() => setTab(k)}
+          >
             {label}
           </button>
         ))}
@@ -290,23 +321,11 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
             />
           ) : null}
 
-          {tab === "password" ? <PasswordPanel notify={notify} /> : null}
-
-          {tab === "notice" ? (
-            <NoticeEditor
-              anns={anns}
-              settings={settings}
-              onSaved={(s, a) => {
-                setSettings(s);
-                setAnns(a);
-              }}
-              notify={notify}
-            />
-          ) : null}
-
           {tab === "history" ? <History today={today} /> : null}
         </div>
       )}
+
+      {confirmNode}
 
       {msg ? (
         <div className={`admin-toast ${msg.t === "err" ? "err" : ""}`} role="status">
@@ -343,7 +362,7 @@ function TodayRecords({
   const [items, setItems] = useState<Record<string, "done" | "skipped" | "none">>({});
   const [note, setNote] = useState("");
   const [status, setStatus] = useState<"done" | "missed">("done");
-  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const { ask, node: confirmNode } = useConfirm();
 
   const map = useMemo(() => {
     const m = new Map<string, TaskRecord>();
@@ -376,16 +395,38 @@ function TodayRecords({
     onChanged();
   };
 
+  const askCommit = (t: Task) => {
+    const label = status === "done" ? "已完成" : "未完成";
+    ask({
+      title: `把这一项记成「${label}」？`,
+      text: `${t.time} ${t.title}`,
+      confirmLabel: "确认保存",
+      cancelLabel: "再改改",
+      tone: status === "done" ? "primary" : "amber",
+      onConfirm: () => void commit(t),
+    });
+  };
+
   const clear = async (t: Task) => {
     const res = await api.deleteRecord(day, t.id);
     if (!res.ok) {
       notify("err", res.message);
       return;
     }
-    setConfirmDel(null);
     if (editing === t.id) setEditing(null);
     notify("ok", "已删除这一条记录");
     onChanged();
+  };
+
+  const askClear = (t: Task) => {
+    ask({
+      title: "删除这一条记录？",
+      text: `删掉后今天就没有「${t.time} ${t.title}」的打卡了。`,
+      confirmLabel: "删除",
+      cancelLabel: "不删",
+      tone: "danger",
+      onConfirm: () => void clear(t),
+    });
   };
 
   return (
@@ -439,27 +480,16 @@ function TodayRecords({
                     {isOpen ? "收起" : "改"}
                   </button>
                   {r ? (
-                    confirmDel === t.id ? (
-                      <button
-                        type="button"
-                        className="mini danger"
-                        disabled={!canEdit}
-                        onClick={() => void clear(t)}
-                      >
-                        确认删
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="mini danger"
-                        disabled={!canEdit}
-                        aria-label="删除记录"
-                        title="删除记录"
-                        onClick={() => setConfirmDel(t.id)}
-                      >
-                        <IconTrash size={15} />
-                      </button>
-                    )
+                    <button
+                      type="button"
+                      className="mini danger"
+                      disabled={!canEdit}
+                      aria-label="删除记录"
+                      title="删除记录"
+                      onClick={() => askClear(t)}
+                    >
+                      <IconTrash size={15} />
+                    </button>
                   ) : null}
                 </span>
               </div>
@@ -516,7 +546,7 @@ function TodayRecords({
                     <button type="button" className="btn btn-quiet" onClick={() => setEditing(null)}>
                       取消
                     </button>
-                    <button type="button" className="btn btn-primary" onClick={() => void commit(t)}>
+                    <button type="button" className="btn btn-primary" onClick={() => askCommit(t)}>
                       保存
                     </button>
                   </div>
@@ -526,6 +556,8 @@ function TodayRecords({
           );
         })}
       </div>
+
+      {confirmNode}
     </>
   );
 }
@@ -670,6 +702,8 @@ function PlanEditor({
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
+  const [removing, setRemoving] = useState<string | null>(null);
+  const { ask, node: confirmNode } = useConfirm();
 
   useEffect(() => {
     setDraft(tasks);
@@ -741,6 +775,51 @@ function PlanEditor({
   const removeTask = (id: string) => {
     setDraft((d) => d.filter((t) => t.id !== id));
     if (openId === id) setOpenId(null);
+    setRemoving(null);
+  };
+
+  const askRemoveTask = (t: Task) => {
+    ask({
+      title: "删掉这一段时间？",
+      text: `${t.time} ${t.title || "（未命名）"}，保存后今天及以后都不再有这一段。`,
+      confirmLabel: "删掉",
+      cancelLabel: "留着",
+      tone: "danger",
+      onConfirm: () => removeTask(t.id),
+    });
+  };
+
+  const askRemoveItem = (t: Task, itemId: string, label: string) => {
+    ask({
+      title: "删掉这一项？",
+      text: `${t.time} ${t.title || "（未命名）"} · ${label}`,
+      confirmLabel: "删掉",
+      cancelLabel: "留着",
+      tone: "danger",
+      onConfirm: () => removeItem(t.id, itemId),
+    });
+  };
+
+  const askRemovePreset = (tag: string) => {
+    ask({
+      title: `删除标签「${tag}」？`,
+      text: "已用这个标签的条目不会被改掉，只是以后不能直接选。",
+      confirmLabel: "删除",
+      cancelLabel: "留着",
+      tone: "danger",
+      onConfirm: () => setS({ ...s, tagPresets: presets.filter((x) => x !== tag) }),
+    });
+  };
+
+  const askSave = () => {
+    ask({
+      title: "保存排程改动？",
+      text: `保存后从今天起生效，今天以前的记录不受影响。共 ${draft.length} 段时间。`,
+      confirmLabel: "保存",
+      cancelLabel: "再看看",
+      tone: "primary",
+      onConfirm: () => void save(),
+    });
   };
 
   const addPreset = () => {
@@ -800,7 +879,7 @@ function PlanEditor({
                       className="mini danger"
                       aria-label="删除这一段时间"
                       title="删除这一段时间"
-                      onClick={() => removeTask(t.id)}
+                      onClick={() => askRemoveTask(t)}
                     >
                       <IconTrash size={15} />
                     </button>
@@ -824,7 +903,7 @@ function PlanEditor({
                       <button
                         type="button"
                         className="mini"
-                        style={{ width: 34, padding: 0 }}
+                        style={{ width: 44, padding: 0, flex: 'none' }}
                         aria-label={`类型：${KIND_LABEL[i.kind]}，点击切换`}
                         onClick={() => patchItem(t.id, i.id, { kind: KIND_NEXT[i.kind] })}
                       >
@@ -848,7 +927,7 @@ function PlanEditor({
                         className="mini danger"
                         aria-label="删除这一项"
                         title="删除这一项"
-                        onClick={() => removeItem(t.id, i.id)}
+                        onClick={() => askRemoveItem(t, i.id, i.label)}
                       >
                         <IconTrash size={14} />
                       </button>
@@ -881,11 +960,7 @@ function PlanEditor({
           {presets.map((t) => (
             <span className="tag-chip" key={t}>
               {t}
-              <button
-                type="button"
-                aria-label={`删除标签 ${t}`}
-                onClick={() => setS({ ...s, tagPresets: presets.filter((x) => x !== t) })}
-              >
+              <button type="button" aria-label={`删除标签 ${t}`} onClick={() => askRemovePreset(t)}>
                 ×
               </button>
             </span>
@@ -913,10 +988,12 @@ function PlanEditor({
 
       <div className="save-bar">
         <span className={`sv-hint ${dirty ? "dirty" : ""}`}>{busy ? "正在保存…" : dirty ? "有未保存的改动" : "已是最新"}</span>
-        <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={() => void save()}>
+        <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={askSave}>
           保存
         </button>
       </div>
+
+      {confirmNode}
     </>
   );
 }
@@ -936,6 +1013,7 @@ function SettingsPanel({
 }) {
   const [s, setS] = useState<Settings>(settings);
   const [busy, setBusy] = useState(false);
+  const { ask, node: confirmNode } = useConfirm();
 
   useEffect(() => setS(settings), [settings]);
 
@@ -954,9 +1032,27 @@ function SettingsPanel({
     onSaved({ ...s, autoSkipRemainPct: pct });
   };
 
+  const askSave = () => {
+    const off = [
+      settings.pinEnabled && !s.pinEnabled ? "访问口令" : "",
+      settings.announcementEnabled && !s.announcementEnabled ? "公告" : "",
+    ].filter(Boolean);
+    ask({
+      title: "保存这些设置？",
+      text: off.length ? `保存后${off.join("、")}会关闭。` : "保存后立刻生效。",
+      confirmLabel: "保存",
+      cancelLabel: "取消",
+      tone: off.length ? "amber" : "primary",
+      onConfirm: () => void save(),
+    });
+  };
+
   return (
     <>
       <div className="card">
+        <div className="sub-head">
+          <div className="st">每天的节奏</div>
+        </div>
         <div className="field">
           <label htmlFor="ds">每天几点算新的一天</label>
           <input
@@ -972,7 +1068,7 @@ function SettingsPanel({
         </div>
 
         <div className="field">
-          <label htmlFor="pct">自动跳过：距离下一项只剩多少时间时算没做</label>
+          <label htmlFor="pct">自动跳过：距下一项只剩多少时间算没做</label>
           <div className="inline-new">
             <input
               id="pct"
@@ -988,7 +1084,7 @@ function SettingsPanel({
             <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-2)" }}>%</span>
           </div>
           <p className="hint" style={{ margin: 0 }}>
-            默认 70：距离下一项只剩 70% 的时间（也就是这一项已经过去 30%）还没打卡，就算没做，前台自动跳到下一项并且不能再补点。后台仍可修改。
+            默认 70：距离下一项只剩 70% 的时间还没打卡，就算没做，前台自动跳过。后台仍可修改。
           </p>
         </div>
       </div>
@@ -999,13 +1095,13 @@ function SettingsPanel({
         </div>
         <Toggle
           t="记录心率和血压"
-          d="打开后前台打卡时多出心率、高压、低压三个输入框，可以不填。"
+          d="打开后前台打卡时多出心率、高压、低压，可以不填。"
           on={s.vitalsEnabled}
           set={(v) => setS({ ...s, vitalsEnabled: v })}
         />
         <Toggle
           t="开启访问口令"
-          d="关闭后任何人打开网址都能直接看。建议保持开启。"
+          d="关闭后任何人打开网址都能直接看，建议保持开启。"
           on={s.pinEnabled}
           set={(v) => setS({ ...s, pinEnabled: v })}
         />
@@ -1019,10 +1115,20 @@ function SettingsPanel({
 
       <div className="save-bar">
         <span className={`sv-hint ${dirty ? "dirty" : ""}`}>{busy ? "正在保存…" : dirty ? "有未保存的改动" : "已是最新"}</span>
-        <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={() => void save()}>
+        <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={askSave}>
           保存
         </button>
       </div>
+
+      <NoticeEditor
+        settings={settings}
+        onSaved={(st) => onSaved(st)}
+        notify={notify}
+      />
+
+      <PasswordPanel notify={notify} />
+
+      {confirmNode}
     </>
   );
 }
@@ -1037,6 +1143,7 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
   const [showPin, setShowPin] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [busy, setBusy] = useState<"pin" | "pass" | null>(null);
+  const { ask, node: confirmNode } = useConfirm();
 
   const pinOk = pin.length === 4 && pin === pin2;
   const passOk = pass.length >= 10 && pass === pass2;
@@ -1069,6 +1176,28 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
     setPass2("");
   };
 
+  const askPin = () => {
+    ask({
+      title: `把前台口令改成 ${pin}？`,
+      text: "家里人以后用这个 4 位数打开前台，改完立即生效。",
+      confirmLabel: "改成这个",
+      cancelLabel: "再想想",
+      tone: "amber",
+      onConfirm: () => void savePin(),
+    });
+  };
+
+  const askPass = () => {
+    ask({
+      title: "更换管理员密码？",
+      text: "改完请记牢，忘记后只能改 Cloudflare 里的密钥。",
+      confirmLabel: "换密码",
+      cancelLabel: "取消",
+      tone: "amber",
+      onConfirm: () => void savePass(),
+    });
+  };
+
   return (
     <>
       <div className="card">
@@ -1076,7 +1205,7 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
           <div className="st">前台口令</div>
           <span className="badge">4 位数字</span>
         </div>
-        <p className="hint" style={{ marginTop: -4 }}>家里人在前台输这个口令才能打开页面。改完立即生效。</p>
+        <p className="hint" style={{ marginTop: -4 }}>家里人在前台输这个口令才能打开页面。</p>
 
         <div className="field">
           <label htmlFor="p1">新口令</label>
@@ -1119,7 +1248,7 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
           type="button"
           className="btn btn-primary btn-block"
           disabled={!pinOk || busy === "pin"}
-          onClick={() => void savePin()}
+          onClick={askPin}
         >
           {busy === "pin" ? "正在更新…" : "更新前台口令"}
         </button>
@@ -1130,7 +1259,7 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
           <div className="st">管理员密码</div>
           <span className="badge">至少 10 位</span>
         </div>
-        <p className="hint" style={{ marginTop: -4 }}>用来登录这个后台。改完请记牢，忘记后只能改 Cloudflare 里的密钥。</p>
+        <p className="hint" style={{ marginTop: -4 }}>用来登录这个后台，改完请记牢。</p>
 
         <div className="field">
           <label htmlFor="pw1">新密码</label>
@@ -1171,11 +1300,13 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
           type="button"
           className="btn btn-primary btn-block"
           disabled={!passOk || busy === "pass"}
-          onClick={() => void savePass()}
+          onClick={askPass}
         >
           {busy === "pass" ? "正在更新…" : "更新管理员密码"}
         </button>
       </div>
+
+      {confirmNode}
     </>
   );
 }
@@ -1183,25 +1314,35 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
 /* ------------------------------ 公告 ------------------------------ */
 
 function NoticeEditor({
-  anns,
   settings,
   onSaved,
   notify,
 }: {
-  anns: Announcement[];
   settings: Settings;
-  onSaved: (s: Settings, a: Announcement[]) => void;
+  onSaved: (s: Settings) => void;
   notify: (t: "ok" | "err", m: string) => void;
 }) {
+  const [anns, setAnns] = useState<Announcement[]>([]);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [busy, setBusy] = useState(false);
+  const { ask, node: confirmNode } = useConfirm();
+
+  const refresh = useCallback(async () => {
+    const fresh = await api.bootstrap(todayKey());
+    if (fresh.ok) {
+      setAnns(fresh.data.announcements);
+      onSaved(fresh.data.settings);
+    }
+  }, [onSaved]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   const publish = async () => {
     setBusy(true);
-    const res = await api.saveAnnouncement({ title: title.trim(), body: body.trim(), activeFrom: from || null, activeTo: to || null });
+    const res = await api.saveAnnouncement({ title: title.trim(), body: body.trim(), activeFrom: null, activeTo: null });
     setBusy(false);
     if (!res.ok) {
       notify("err", res.message);
@@ -1210,10 +1351,17 @@ function NoticeEditor({
     notify("ok", "公告已发布");
     setTitle("");
     setBody("");
-    setFrom("");
-    setTo("");
-    const fresh = await api.bootstrap(todayKey());
-    if (fresh.ok) onSaved(fresh.data.settings, fresh.data.announcements);
+    await refresh();
+  };
+
+  const archive = async (id: number) => {
+    const res = await api.archiveAnnouncement(id);
+    if (!res.ok) {
+      notify("err", res.message);
+      return;
+    }
+    notify("ok", "已下架");
+    await refresh();
   };
 
   return (
@@ -1223,6 +1371,7 @@ function NoticeEditor({
           <div className="st">发一条公告</div>
           <span className="badge">{settings.announcementEnabled ? "前台会弹" : "前台已关闭"}</span>
         </div>
+        <p className="hint" style={{ marginTop: -4 }}>关闭只对这次打开有效，刷新后还会再弹。</p>
         <div className="field">
           <label htmlFor="at">标题</label>
           <input
@@ -1245,21 +1394,20 @@ function NoticeEditor({
             placeholder="写给家里人看的话，尽量短。"
           />
         </div>
-        <div className="row2">
-          <div className="field">
-            <label htmlFor="af">从哪天开始（可空）</label>
-            <input id="af" className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="ato">到哪天结束（可空）</label>
-            <input id="ato" className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </div>
-        </div>
         <button
           type="button"
           className="btn btn-primary btn-block"
           disabled={busy || !title.trim() || !body.trim()}
-          onClick={() => void publish()}
+          onClick={() =>
+            ask({
+              title: "发布这条公告？",
+              text: title.trim(),
+              confirmLabel: "发布",
+              cancelLabel: "再改改",
+              tone: "primary",
+              onConfirm: () => void publish(),
+            })
+          }
         >
           {busy ? "正在发布…" : "发布"}
         </button>
@@ -1280,22 +1428,24 @@ function NoticeEditor({
             <button
               type="button"
               className="mini danger"
-              onClick={async () => {
-                const res = await api.archiveAnnouncement(a.id);
-                if (!res.ok) {
-                  notify("err", res.message);
-                  return;
-                }
-                notify("ok", "已下架");
-                const fresh = await api.bootstrap(todayKey());
-                if (fresh.ok) onSaved(fresh.data.settings, fresh.data.announcements);
-              }}
+              onClick={() =>
+                ask({
+                  title: "下架这条公告？",
+                  text: a.title,
+                  confirmLabel: "下架",
+                  cancelLabel: "留着",
+                  tone: "danger",
+                  onConfirm: () => void archive(a.id),
+                })
+              }
             >
               下架
             </button>
           </div>
         ))}
       </div>
+
+      {confirmNode}
     </>
   );
 }
@@ -1307,22 +1457,69 @@ function taskOf(tasksByDay: Record<string, Task[]>, day: string, id: string) {
   return (tasksByDay[day] || []).find((t) => t.id === id) ?? null;
 }
 
+function monthOf(dateKey: string) {
+  return dateKey.slice(0, 7);
+}
+
+function shiftMonth(month: string, delta: number) {
+  const [y, m] = month.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthRange(month: string) {
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}`, days: last };
+}
+
+function weekdayOf(dateKey: string) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/** 记下的是「几点几分」写的，按北京时间显示 */
+function updatedText(iso: string) {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+  const p = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(t);
+  return `记于 ${p}`;
+}
+
 function History({ today }: { today: string }) {
+  const [month, setMonth] = useState(() => monthOf(today));
   const [all, setAll] = useState<TaskRecord[]>([]);
   const [tasksByDay, setTasksByDay] = useState<Record<string, Task[]>>({});
   const [loading, setLoading] = useState(true);
   const [openDay, setOpenDay] = useState<string | null>(null);
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   useEffect(() => {
+    let alive = true;
+    const { from, to } = monthRange(month);
+    const end = to > today ? today : to;
+    setLoading(true);
+    setOpenRow(null);
     void (async () => {
-      const res = await api.history(addDays(today, -29), today);
+      const res = await api.history(from, end);
+      if (!alive) return;
       setLoading(false);
       if (res.ok) {
         setAll(res.data.records);
         setTasksByDay(res.data.tasksByDay || {});
       }
     })();
-  }, [today]);
+    return () => {
+      alive = false;
+    };
+  }, [month, today]);
 
   const byDay = useMemo(() => {
     const m = new Map<string, TaskRecord[]>();
@@ -1334,93 +1531,192 @@ function History({ today }: { today: string }) {
     return m;
   }, [all]);
 
-  const list = Array.from({ length: 30 }, (_, i) => addDays(today, -i));
+  const { from: firstDay, days } = monthRange(month);
+  const lead = weekdayOf(firstDay);
+  const [y, mm] = month.split("-");
+  const isThisMonth = month === monthOf(today);
+
+  const cells: (string | null)[] = [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length: days }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const detailDay = openDay ?? null;
+  const detailRecords = detailDay ? byDay.get(detailDay) ?? [] : [];
+  const detailDone = detailRecords.filter((r) => r.status === "done").length;
+  const detailMissed = detailRecords.length - detailDone;
 
   return (
     <>
       <div className="card">
-        <div className="sub-head">
-          <div className="st">最近 30 天</div>
+        <div className="cal-head">
+          <button type="button" className="cal-nav" aria-label="上个月" onClick={() => setMonth(shiftMonth(month, -1))}>
+            <IconChevron size={16} style={{ transform: "rotate(180deg)" }} />
+          </button>
+          <div className="cal-title">
+            {y} 年 {Number(mm)} 月
+          </div>
+          <button
+            type="button"
+            className="cal-nav flip"
+            aria-label="下个月"
+            disabled={month >= monthOf(today)}
+            onClick={() => setMonth(shiftMonth(month, 1))}
+          >
+            <IconChevron size={16} />
+          </button>
         </div>
-        <p className="hint" style={{ marginTop: -4 }}>
-          绿色 = 全部完成；黄色 = 有未完成或未记录；空白 = 没有记录。点一天看明细。
-        </p>
-        <div className="grid-days">
-          {list.slice().reverse().map((d) => {
+
+        <div className="cal-week" aria-hidden="true">
+          {["日", "一", "二", "三", "四", "五", "六"].map((w) => (
+            <span key={w}>{w}</span>
+          ))}
+        </div>
+
+        <div className="cal-grid">
+          {cells.map((d, idx) => {
+            if (!d) return <span className="cal-cell blank" key={`b${idx}`} />;
             const rs = byDay.get(d) ?? [];
             const done = rs.filter((r) => r.status === "done").length;
-            const missed = rs.filter((r) => r.status === "missed").length;
-            const cls = rs.length === 0 ? "none" : missed > 0 ? "part" : "ok";
+            const missed = rs.length - done;
+            const cls = d > today ? "future" : rs.length === 0 ? "none" : missed > 0 ? "part" : "ok";
             return (
               <button
                 type="button"
-                className={`day-cell ${cls}`}
+                className={`cal-cell ${cls} ${openDay === d ? "sel" : ""} ${d === today ? "today" : ""}`}
                 key={d}
-                onClick={() => setOpenDay((cur) => (cur === d ? null : d))}
                 aria-pressed={openDay === d}
+                onClick={() => setOpenDay((cur) => (cur === d ? null : d))}
               >
-                <span className="dd">{d.slice(5)}</span>
-                <span className="nn">{rs.length === 0 ? "–" : done}</span>
-                {openDay === d ? <span className="dd">已选</span> : null}
+                <span className="cd">{Number(d.slice(8))}</span>
+                <span className="cn">{rs.length === 0 ? "\u00a0" : missed > 0 ? `${done}/${rs.length}` : `${done}`}</span>
               </button>
             );
           })}
+        </div>
+
+        <div className="cal-foot">
+          <span className="hint" style={{ margin: 0 }}>
+            绿 = 全部完成 · 黄 = 有未完成 · 空 = 没记录
+          </span>
+          {!isThisMonth ? (
+            <button type="button" className="mini wide" onClick={() => setMonth(monthOf(today))}>
+              回到本月
+            </button>
+          ) : null}
         </div>
       </div>
 
       {loading ? <div className="card" style={{ fontSize: 13, color: "var(--text-2)" }}>正在取历史…</div> : null}
 
-      {list
-        .filter((d) => (openDay ? d === openDay : true))
-        .map((d) => {
-          const rs = byDay.get(d);
-          if (!rs || rs.length === 0) return null;
-          const done = rs.filter((r) => r.status === "done").length;
-          const missed = rs.length - done;
-          return (
-            <div className="card" key={d}>
-              <div className="today-bar" style={{ marginBottom: 8 }}>
-                <div className="tb-l">
-                  <div className="tb-date">{dayLabel(d)}</div>
-                  <div className="tb-meta">
-                    完成 {done} · 未完成 {missed}
-                  </div>
-                </div>
-                <span className={`badge ${missed > 0 ? "warn" : ""}`}>{missed > 0 ? "有未完成" : "全部完成"}</span>
-              </div>
-              <div className="adm-list" style={{ marginTop: 0 }}>
-                {rs
-                  .slice()
-                  .sort((a, b) => a.taskId.localeCompare(b.taskId))
-                  .map((r) => {
-                    const t = taskOf(tasksByDay, d, r.taskId);
-                    const isAuto = r.status === "missed" && r.note === AUTO_MISS_NOTE;
-                    const skipped = Object.values(r.items).filter((v) => v === "skipped").length;
-                    return (
-                      <div className="adm-row" key={r.taskId}>
-                        <div className="adm-row-head">
-                          <span className="adm-time">{t?.time ?? "—"}</span>
-                          <span className="adm-title">
-                            {t?.title ?? r.taskId}
-                            {skipped > 0 ? (
-                              <span style={{ fontWeight: 600, color: "var(--text-3)" }}> · 暂时不吃 {skipped}</span>
-                            ) : null}
-                          </span>
-                          <span className={`badge ${r.status === "done" ? "" : "warn"}`}>
-                            {r.status === "done" ? "已完成" : isAuto ? "已跳过" : "未完成"}
-                          </span>
-                          <span />
-                        </div>
-                        {r.note && !isAuto ? (
-                          <div className="hint" style={{ padding: "0 10px 8px", margin: 0 }}>{r.note}</div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+      {!loading && detailDay ? (
+        <div className="card">
+          <div className="today-bar" style={{ marginBottom: 8 }}>
+            <div className="tb-l">
+              <div className="tb-date">{dayLabel(detailDay)}</div>
+              <div className="tb-meta">
+                完成 {detailDone} · 未完成 {detailMissed}
               </div>
             </div>
-          );
-        })}
+            <span className={`badge ${detailMissed > 0 ? "warn" : detailRecords.length ? "" : "off"}`}>
+              {detailRecords.length === 0 ? "没记录" : detailMissed > 0 ? "有未完成" : "全部完成"}
+            </span>
+          </div>
+          {detailRecords.length === 0 ? (
+            <p className="hint" style={{ margin: 0 }}>这一天没有打卡记录。</p>
+          ) : (
+            <div className="adm-list" style={{ marginTop: 0 }}>
+              {detailRecords
+                .slice()
+                .sort((a, b) => (taskOf(tasksByDay, detailDay, a.taskId)?.time ?? "").localeCompare(taskOf(tasksByDay, detailDay, b.taskId)?.time ?? ""))
+                .map((r) => {
+                  const t = taskOf(tasksByDay, detailDay, r.taskId);
+                  const isAuto = r.status === "missed" && r.note === AUTO_MISS_NOTE;
+                  const skipped = Object.values(r.items).filter((v) => v === "skipped").length;
+                  const rowKey = `${r.day}|${r.taskId}`;
+                  const open = openRow === rowKey;
+                  const items = t?.items ?? [];
+                  const vit = r.vitals;
+                  const hasVitals = !!vit && (vit.hr != null || vit.sbp != null || vit.dbp != null);
+                  return (
+                    <div className={`adm-row ${open ? "open" : ""}`} key={r.taskId}>
+                      <button
+                        type="button"
+                        className="adm-row-head"
+                        aria-expanded={open}
+                        onClick={() => setOpenRow(open ? null : rowKey)}
+                      >
+                        <span className="adm-time">{t?.time ?? "—"}</span>
+                        <span className="adm-title">
+                          {t?.title ?? r.taskId}
+                          {skipped > 0 ? (
+                            <span style={{ fontWeight: 600, color: "var(--text-3)" }}> · 暂时不吃 {skipped}</span>
+                          ) : null}
+                        </span>
+                        <span className={`badge ${r.status === "done" ? "" : "warn"}`}>
+                          {r.status === "done" ? "已完成" : isAuto ? "已跳过" : "未完成"}
+                        </span>
+                        <span className={`hist-chev ${open ? "open" : ""}`} aria-hidden="true">
+                          <IconChevronDown size={15} />
+                        </span>
+                      </button>
+
+                      {open ? (
+                        <div className="adm-edit hist-detail">
+                          {items.length === 0 ? (
+                            <p className="hint" style={{ margin: "2px 0 6px" }}>这一天的排程里没有分项。</p>
+                          ) : (
+                            items.map((i) => {
+                              const st = r.items[i.id] ?? "none";
+                              return (
+                                <div className="item-line" key={i.id}>
+                                  <span className="il-label">
+                                    {i.label}
+                                    {i.tag ? <span className="il-tag" style={{ marginLeft: 6 }}>{i.tag}</span> : null}
+                                  </span>
+                                  <span className={`mini-chk static ${st === "done" ? "on" : st === "skipped" ? "on sk" : ""}`}>
+                                    {st === "done" ? "已吃" : st === "skipped" ? "暂时不吃" : isAuto ? "未勾选" : "未记录"}
+                                  </span>
+                                </div>
+                              );
+                            })
+                          )}
+
+                          {hasVitals ? (
+                            <div className="hist-facts">
+                              <span>
+                                心率 <b>{vit?.hr ?? "—"}</b>
+                              </span>
+                              <span>
+                                高压 <b>{vit?.sbp ?? "—"}</b>
+                              </span>
+                              <span>
+                                低压 <b>{vit?.dbp ?? "—"}</b>
+                              </span>
+                            </div>
+                          ) : null}
+
+                          {r.note ? (
+                            <div className={`hist-note ${isAuto ? "auto" : ""}`}>
+                              <span className="hn-k">备注</span>
+                              <span className="hn-v">{isAuto ? "超过时间一直没打卡，系统自动记为未完成" : r.note}</span>
+                            </div>
+                          ) : null}
+
+                          <div className="hist-facts subtle">
+                            <span>{r.source === "admin" ? "后台补记" : "前台打卡"}</span>
+                            <span>{updatedText(r.updatedAt)}</span>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      ) : null}
     </>
   );
 }

@@ -13,7 +13,6 @@ import { Gate } from "./Gate";
 import { IconAlert, IconByName, IconChevron, IconClock, IconLock } from "./Icons";
 import { TaskSheet } from "./TaskSheet";
 
-const DISMISS_KEY = "gmr.dismissedAnn.v1";
 
 /** 自动跳过时给界面用的临时记录（还没写进云端时也要按「未完成」显示） */
 function autoRecord(day: string, task: Task): TaskRecord {
@@ -33,15 +32,8 @@ export function Today() {
   const { state, records, save, clearRecord, reload, toast, showToast } = useAppData();
   const now = useNow();
   const [openId, setOpenId] = useState<string | null>(null);
+  // 只在这一次打开里记住关掉的公告；刷新或重开网页会再弹出来
   const [dismissed, setDismissed] = useState<number[]>([]);
-
-  useEffect(() => {
-    try {
-      setDismissed(JSON.parse(window.localStorage.getItem(DISMISS_KEY) || "[]"));
-    } catch {
-      setDismissed([]);
-    }
-  }, []);
 
   const data = state.kind === "ready" ? state.data : null;
 
@@ -209,15 +201,22 @@ export function Today() {
   const dismissAnn = () => {
     const ids = (data.announcements || []).map((a) => a.id);
     setDismissed(ids);
-    try {
-      window.localStorage.setItem(DISMISS_KEY, JSON.stringify(ids));
-    } catch {
-      /* 忽略 */
-    }
   };
 
   const doneCount = ordered.filter((t) => effective[`${data.day}|${t.id}`]?.status === "done").length;
   const missedCount = ordered.filter((t) => effective[`${data.day}|${t.id}`]?.status === "missed").length;
+
+  /**
+   * 全部有结果，或者最后一项连 5 分钟缓冲都过完了 → 主面板不再推任务，
+   * 直接告诉照顾的人「今天没有了」，别再对着旧任务干等。
+   */
+  const last = ordered[ordered.length - 1];
+  const lastSec = last ? secondsUntil(last.time, now) : 0;
+  const allSettled = ordered.every((t) => {
+    const st = effective[`${data.day}|${t.id}`]?.status;
+    return st === "done" || st === "missed";
+  });
+  const dayClosed = ordered.length > 0 && (allSettled || lastSec < -300);
 
   return (
     <>
@@ -249,8 +248,35 @@ export function Today() {
       <main className="shell page-enter">
         {shown.length > 0 ? <Banner items={shown} onDismiss={dismissAnn} /> : null}
 
+        {/* 当天没有新任务了 */}
+        {dayClosed ? (
+          <section className="glass hero tone-done rest-card" style={{ marginTop: 12 }}>
+            <div className="hero-eyebrow">
+              <span className="dot" aria-hidden="true" />
+              {missedCount > 0 ? "今天已经没有新任务了" : "今天的任务都记好了"}
+            </div>
+            <div className="rest-title">当日已无新项</div>
+            <p className="rest-sub">
+              {missedCount > 0
+                ? `有 ${missedCount} 项没赶上，家里人可在后台补记。明天按新的时间表继续。`
+                : "每一项都记好了，好好休息。明天按新的时间表继续。"}
+            </p>
+            <div className="rest-stats">
+              <span>
+                完成 <b>{doneCount}</b>
+              </span>
+              <span>
+                未完成 <b>{missedCount}</b>
+              </span>
+              <span>
+                共 <b>{ordered.length}</b> 项
+              </span>
+            </div>
+          </section>
+        ) : null}
+
         {/* 当前任务主卡 */}
-        <section className={`glass hero tone-${focusPhase}`} style={{ marginTop: 12 }}>
+        <section className={`glass hero tone-${focusPhase}`} style={{ marginTop: 12, display: dayClosed ? "none" : undefined }}>
           <div className="hero-eyebrow">
             <span className="dot" aria-hidden="true" />
             {focusPhase === "done"
@@ -271,29 +297,40 @@ export function Today() {
             <span className="hero-title">{focus.title}</span>
           </div>
 
-          <div
-            className={`countdown ${focusSec < -1 ? (focusSec < -300 ? "is-overdue" : "is-now") : ""}`}
-            aria-live="off"
-          >
-            <span className="countdown-label">
-              {focusPhase === "done"
-                ? "已完成"
-                : focusPhase === "missed"
-                ? "未完成"
-                : focusSec > 0
-                ? "距离"
-                : focusSec > -300
-                ? "正好是现在"
-                : "已经过去"}
-            </span>
-            <span className="countdown-value">
-              {focusPhase === "done" || focusPhase === "missed"
-                ? focus.time
-                : focusSec > 0
-                ? formatCountdown(focusSec)
-                : formatCountdown(focusSec)}
-            </span>
-          </div>
+          {(() => {
+            const settled = focusPhase === "done" || focusPhase === "missed";
+            const inWindow = !settled && focusSec <= 300 && focusSec >= -300;
+            const overdue = !settled && focusSec < -300;
+            // 正负 5 分钟这 10 分钟里，背景条从 0 走到 100%
+            const pct = inWindow ? Math.min(100, Math.max(0, ((300 - focusSec) / 600) * 100)) : 0;
+            return (
+              <div
+                className={`countdown ${overdue ? "is-overdue" : ""} ${inWindow ? "is-window" : ""} ${
+                  settled ? "is-settled" : ""
+                }`}
+              >
+                {inWindow ? (
+                  <span className="cd-progress" aria-hidden="true">
+                    <span className="cd-progress-fill" style={{ width: `${pct}%` }} />
+                  </span>
+                ) : null}
+                <span className={`countdown-label ${inWindow ? "big" : ""}`}>
+                  {focusPhase === "done"
+                    ? "已完成"
+                    : focusPhase === "missed"
+                    ? "未完成"
+                    : inWindow
+                    ? "现在进行"
+                    : overdue
+                    ? "已超时"
+                    : "距离本项还有"}
+                </span>
+                <span className={`countdown-value ${inWindow ? "mid" : ""}`}>
+                  {settled ? focus.time : formatCountdown(focusSec)}
+                </span>
+              </div>
+            );
+          })()}
 
           <div className="stack">
             {focus.note ? (

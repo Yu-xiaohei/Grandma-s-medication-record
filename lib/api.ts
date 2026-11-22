@@ -54,6 +54,15 @@ export function readCache(): Bootstrap | null {
 export function writeCache(data: Bootstrap) {
   writeJson(CACHE_KEY, data);
 }
+/** 记录在云端被删掉时，本机缓存也要一起清掉，别刷新后又冒出来 */
+export function dropCachedRecord(day: string, taskId: string) {
+  const cache = readCache();
+  if (!cache) return;
+  writeCache({
+    ...cache,
+    records: cache.records.filter((r) => !(r.day === day && r.taskId === taskId)),
+  });
+}
 
 export type QueuedWrite =
   | { kind: "record"; payload: RecordPayload; at: string }

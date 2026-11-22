@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, clearQueue, clearSession, getToken, pushQueue, readCache, readQueue, writeCache } from "./api";
+import { api, clearQueue, clearSession, dropCachedRecord, getToken, pushQueue, readCache, readQueue, writeCache } from "./api";
 import type { ApiError, QueuedWrite, RecordPayload } from "./api";
 import { now as nowDate, setServerTime } from "./clock";
 import { nowParts, todayKey } from "./time";
@@ -204,15 +204,23 @@ export function useAppData() {
   );
 
   const clearRecord = useCallback(async (day: string, taskId: string) => {
+    const before = overlay[recordKey(day, taskId)];
     setOverlay((prev) => {
       const next = { ...prev };
       delete next[recordKey(day, taskId)];
       return next;
     });
+    dropCachedRecord(day, taskId);
     const res = await api.deleteRecord(day, taskId);
-    if (!res.ok && res.error !== "offline") return { ok: false as const, message: res.message };
+    if (!res.ok && res.error !== "offline") {
+      // 删失败就把这一条放回去，别让界面骗人
+      setOverlay((prev) => (before ? { ...prev, [recordKey(day, taskId)]: before } : prev));
+      return { ok: false as const, message: res.message };
+    }
+    // 删掉的记录如果缓存里还在，历史页会一直看见它
+    dropCachedRecord(day, taskId);
     return { ok: true as const };
-  }, []);
+  }, [overlay]);
 
   const reload = useCallback(() => load({ silent: true }), [load]);
 

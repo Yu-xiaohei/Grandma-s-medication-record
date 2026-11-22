@@ -6,6 +6,7 @@ import { secondsUntil } from "@/lib/time";
 import { AUTO_MISS_NOTE, MISSED_UNLOCK_SEC, canConfirm, needsEarlyConfirm, tally } from "@/lib/rules";
 import type { ItemState, Task, TaskRecord } from "@/lib/types";
 import { IconAlert, IconClose, IconLock } from "./Icons";
+import { Spinner } from "./Spinner";
 
 type Props = {
   task: Task;
@@ -19,8 +20,8 @@ type Props = {
     items: Record<string, ItemState>;
     note: string | null;
     vitals: { hr: number | null; sbp: number | null; dbp: number | null } | null;
-  }) => void;
-  onClear: () => void;
+  }) => Promise<void>;
+  onClear: () => Promise<void>;
 };
 
 export type Vitals = { hr: string; sbp: string; dbp: string };
@@ -28,6 +29,7 @@ export type Vitals = { hr: string; sbp: string; dbp: string };
 export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose, onSave, onClear }: Props) {
   const [items, setItems] = useState<Record<string, ItemState>>(() => ({ ...(record?.items ?? {}) }));
   const [note, setNote] = useState(record?.note ?? "");
+  const [saving, setSaving] = useState(false);
   const [vitals, setVitals] = useState<Vitals>({
     hr: record?.vitals?.hr != null ? String(record.vitals.hr) : "",
     sbp: record?.vitals?.sbp != null ? String(record.vitals.sbp) : "",
@@ -87,8 +89,19 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
     return { hr, sbp, dbp };
   };
 
+  /** 等云端真的记下再收起抽屉，期间按钮转圈、不让重复点 */
+  const runSave = async (fn: () => Promise<void>) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await fn();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const doDone = () => {
-    const run = () => onSave({ status: "done", items, note: note.trim() || null, vitals: vitalsPayload() });
+    const run = () => void runSave(() => onSave({ status: "done", items, note: note.trim() || null, vitals: vitalsPayload() }));
     if (needsEarlyConfirm(sec)) {
       setConfirm({
         title: "还没到时间，真的已经完成了吗？",
@@ -112,7 +125,7 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
       ok: "是的，未完成",
       cancel: "我考虑一下",
       tone: "danger",
-      run: () => onSave({ status: "missed", items, note: note.trim() || null, vitals: vitalsPayload() }),
+      run: () => void runSave(() => onSave({ status: "missed", items, note: note.trim() || null, vitals: vitalsPayload() })),
     });
   };
 
@@ -123,7 +136,7 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
       ok: "撤销",
       cancel: "不用了",
       tone: "primary",
-      run: onClear,
+      run: () => void runSave(onClear),
     });
   };
 
@@ -253,8 +266,8 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
           ) : null}
 
           {record && !locked ? (
-            <button type="button" className="btn btn-quiet btn-block" style={{ marginTop: 4 }} onClick={doClear}>
-              撤销这一项记录
+            <button type="button" className="btn btn-quiet btn-block" style={{ marginTop: 4 }} disabled={saving} onClick={doClear}>
+              {saving ? <><Spinner /> 正在处理…</> : "撤销这一项记录"}
             </button>
           ) : null}
         </div>
@@ -262,11 +275,11 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
         <div className="sheet-foot">
           <p style={{ margin: "0 0 10px", fontSize: 12.5, lineHeight: 1.5, color: "#7b8b9c", textAlign: "center" }}>{hint}</p>
           <div className="actions" style={{ marginTop: 0 }}>
-            <button type="button" className="btn btn-danger" onClick={doMissed} disabled={locked || !canMissed || savedMissed}>
+            <button type="button" className="btn btn-danger" onClick={doMissed} disabled={locked || !canMissed || savedMissed || saving}>
               {savedMissed ? "已记未完成" : "未完成"}
             </button>
-            <button type="button" className="btn btn-primary" onClick={doDone} disabled={locked || savedDone || !allSet}>
-              {savedDone ? "已记完成" : allSet ? "完成" : "请先勾选"}
+            <button type="button" className="btn btn-primary" onClick={doDone} disabled={locked || savedDone || !allSet || saving}>
+              {saving ? <><Spinner /> 正在记…</> : savedDone ? "已记完成" : allSet ? "完成" : "请先勾选"}
             </button>
           </div>
           {!allSet && !savedDone && !locked ? (

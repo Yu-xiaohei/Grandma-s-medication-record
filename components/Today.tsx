@@ -12,6 +12,7 @@ import { Banner } from "./Banner";
 import { Gate } from "./Gate";
 import { IconAlert, IconByName, IconChevron, IconClock, IconLock } from "./Icons";
 import { TaskSheet } from "./TaskSheet";
+import { Spinner } from "./Spinner";
 
 
 /** 自动跳过时给界面用的临时记录（还没写进云端时也要按「未完成」显示） */
@@ -132,7 +133,8 @@ export function Today() {
   if (state.kind === "loading") {
     return (
       <main className="shell" style={{ paddingTop: 80 }}>
-        <div className="glass" style={{ padding: 24, textAlign: "center" }}>
+        <div className="glass" style={{ padding: 24, display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
+          <Spinner size={17} />
           <div style={{ fontSize: 15, fontWeight: 600, color: "#46586b" }}>正在加载…</div>
         </div>
       </main>
@@ -470,8 +472,8 @@ export function Today() {
           vitalsEnabled={data.settings.vitalsEnabled}
           editable={data.canEditToday && !lockedIds.has(openTask.id)}
           onClose={() => setOpenId(null)}
-          onSave={(p) => void onSave(openTask, p)}
-          onClear={() => void onClear(openTask)}
+          onSave={(p) => onSave(openTask, p)}
+          onClear={() => onClear(openTask)}
         />
       ) : null}
     </>

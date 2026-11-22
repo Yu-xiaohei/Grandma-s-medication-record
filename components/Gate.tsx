@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, setSession } from "@/lib/api";
 import { IconLock } from "./Icons";
+import { Spinner } from "./Spinner";
 
 /**
  * 口令门：用网页内置大键盘，不弹系统键盘。
@@ -118,7 +119,7 @@ export function Gate({ onPass }: { onPass: () => void }) {
         disabled={busy || pin.length !== 4}
         onClick={() => void submit(pin)}
       >
-        {busy ? "正在核对…" : "进入"}
+        {busy ? <><Spinner /> 正在核对…</> : "进入"}
       </button>
 
       <p style={{ marginTop: 6, fontSize: 12 }}>

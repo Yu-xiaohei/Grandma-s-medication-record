@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { SwRegister } from "@/components/SwRegister";
+import { NetworkBar } from "@/components/NetworkBar";
 
 const BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "");
 
@@ -43,7 +44,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body>{children}<SwRegister /></body>
+      <body>
+        <NetworkBar />
+        {children}
+        <SwRegister />
+      </body>
     </html>
   );
 }

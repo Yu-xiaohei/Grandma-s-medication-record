@@ -6,6 +6,7 @@ import { addDays, dayLabel, todayKey } from "@/lib/time";
 import { AUTO_MISS_NOTE } from "@/lib/rules";
 import type { Announcement, Settings, Task, TaskItem, TaskRecord } from "@/lib/types";
 import { DEFAULT_TAGS } from "@/lib/types";
+import { Spinner } from "./Spinner";
 import { Confirm } from "./Confirm";
 import type { ConfirmSpec } from "./Confirm";
 import {
@@ -49,6 +50,12 @@ export function Admin() {
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(true);
 
+  /** 必须稳定：它进了 AdminShell 的 load 依赖里，变一次就会无限重取 */
+  const logout = useCallback(() => {
+    clearSession();
+    setAuthed(false);
+  }, []);
+
   useEffect(() => {
     const token = getToken();
     if (token && getRole() === "admin") setAuthed(true);
@@ -58,7 +65,8 @@ export function Admin() {
   if (checking) {
     return (
       <main className="shell" style={{ paddingTop: 80 }}>
-        <div className="glass" style={{ padding: 22, textAlign: "center", fontSize: 14, color: "var(--text-2)" }}>
+        <div className="glass" style={{ padding: 22, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 14, color: "var(--text-2)" }}>
+          <Spinner size={16} />
           正在检查登录…
         </div>
       </main>
@@ -71,14 +79,7 @@ export function Admin() {
       />
     );
   }
-  return (
-    <AdminShell
-      onLogout={() => {
-        clearSession();
-        setAuthed(false);
-      }}
-    />
-  );
+  return <AdminShell onLogout={logout} />;
 }
 
 /* ------------------------------ 登录 ------------------------------ */
@@ -162,7 +163,7 @@ function AdminLogin({ onPass }: { onPass: () => void }) {
           disabled={busy || !u.trim() || !p}
           onClick={() => void submit()}
         >
-          {busy ? "正在登录…" : "登录"}
+          {busy ? <><Spinner /> 正在登录…</> : "登录"}
         </button>
         <a
           href="../"
@@ -282,11 +283,12 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
       </div>
 
       {loading ? (
-        <div className="card" style={{ textAlign: "center", color: "var(--text-2)", fontSize: 13 }}>
+        <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--text-2)", fontSize: 13 }}>
+          <Spinner size={16} />
           正在加载…
         </div>
       ) : (
-        <div className="tab-panel" key={tab}>
+        <div className={`tab-panel ${tab === "plan" || tab === "settings" ? "has-savebar" : ""}`} key={tab}>
           {tab === "today" ? (
             <TodayRecords
               day={day}
@@ -362,6 +364,7 @@ function TodayRecords({
   const [items, setItems] = useState<Record<string, "done" | "skipped" | "none">>({});
   const [note, setNote] = useState("");
   const [status, setStatus] = useState<"done" | "missed">("done");
+  const [saving, setSaving] = useState(false);
   const { ask, node: confirmNode } = useConfirm();
 
   const map = useMemo(() => {
@@ -385,7 +388,10 @@ function TodayRecords({
   };
 
   const commit = async (t: Task) => {
+    if (saving) return;
+    setSaving(true);
     const res = await api.saveRecord({ day, taskId: t.id, status, items, note: note.trim() || null, source: "admin" });
+    setSaving(false);
     if (!res.ok) {
       notify("err", res.message);
       return;
@@ -408,7 +414,10 @@ function TodayRecords({
   };
 
   const clear = async (t: Task) => {
+    if (saving) return;
+    setSaving(true);
     const res = await api.deleteRecord(day, t.id);
+    setSaving(false);
     if (!res.ok) {
       notify("err", res.message);
       return;
@@ -543,11 +552,11 @@ function TodayRecords({
                   </div>
 
                   <div className="actions" style={{ marginTop: 10 }}>
-                    <button type="button" className="btn btn-quiet" onClick={() => setEditing(null)}>
+                    <button type="button" className="btn btn-quiet" disabled={saving} onClick={() => setEditing(null)}>
                       取消
                     </button>
-                    <button type="button" className="btn btn-primary" onClick={() => askCommit(t)}>
-                      保存
+                    <button type="button" className="btn btn-primary" disabled={saving} onClick={() => askCommit(t)}>
+                      {saving ? <><Spinner /> 正在保存…</> : "保存"}
                     </button>
                   </div>
                 </div>
@@ -987,8 +996,11 @@ function PlanEditor({
       </div>
 
       <div className="save-bar">
-        <span className={`sv-hint ${dirty ? "dirty" : ""}`}>{busy ? "正在保存…" : dirty ? "有未保存的改动" : "已是最新"}</span>
+        <span className={`sv-hint ${dirty ? "dirty" : ""}`}>
+          {busy ? "正在保存…" : dirty ? "有未保存的改动" : "已是最新"}
+        </span>
         <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={askSave}>
+          {busy ? <Spinner size={14} /> : null}
           保存
         </button>
       </div>
@@ -1114,17 +1126,16 @@ function SettingsPanel({
       </div>
 
       <div className="save-bar">
-        <span className={`sv-hint ${dirty ? "dirty" : ""}`}>{busy ? "正在保存…" : dirty ? "有未保存的改动" : "已是最新"}</span>
+        <span className={`sv-hint ${dirty ? "dirty" : ""}`}>
+          {busy ? "正在保存…" : dirty ? "有未保存的改动" : "已是最新"}
+        </span>
         <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={askSave}>
+          {busy ? <Spinner size={14} /> : null}
           保存
         </button>
       </div>
 
-      <NoticeEditor
-        settings={settings}
-        onSaved={(st) => onSaved(st)}
-        notify={notify}
-      />
+      <NoticeEditor settings={settings} notify={notify} />
 
       <PasswordPanel notify={notify} />
 
@@ -1250,7 +1261,7 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
           disabled={!pinOk || busy === "pin"}
           onClick={askPin}
         >
-          {busy === "pin" ? "正在更新…" : "更新前台口令"}
+          {busy === "pin" ? <><Spinner /> 正在更新…</> : "更新前台口令"}
         </button>
       </div>
 
@@ -1302,7 +1313,7 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
           disabled={!passOk || busy === "pass"}
           onClick={askPass}
         >
-          {busy === "pass" ? "正在更新…" : "更新管理员密码"}
+          {busy === "pass" ? <><Spinner /> 正在更新…</> : "更新管理员密码"}
         </button>
       </div>
 
@@ -1315,11 +1326,9 @@ function PasswordPanel({ notify }: { notify: (t: "ok" | "err", m: string) => voi
 
 function NoticeEditor({
   settings,
-  onSaved,
   notify,
 }: {
   settings: Settings;
-  onSaved: (s: Settings) => void;
   notify: (t: "ok" | "err", m: string) => void;
 }) {
   const [anns, setAnns] = useState<Announcement[]>([]);
@@ -1328,13 +1337,11 @@ function NoticeEditor({
   const [busy, setBusy] = useState(false);
   const { ask, node: confirmNode } = useConfirm();
 
+  // 只拿公告列表。别再顺手回写 settings —— 那会把正在改的开关冲回旧值。
   const refresh = useCallback(async () => {
     const fresh = await api.bootstrap(todayKey());
-    if (fresh.ok) {
-      setAnns(fresh.data.announcements);
-      onSaved(fresh.data.settings);
-    }
-  }, [onSaved]);
+    if (fresh.ok) setAnns(fresh.data.announcements);
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -1409,7 +1416,7 @@ function NoticeEditor({
             })
           }
         >
-          {busy ? "正在发布…" : "发布"}
+          {busy ? <><Spinner /> 正在发布…</> : "发布"}
         </button>
       </div>
 
@@ -1612,7 +1619,12 @@ function History({ today }: { today: string }) {
         </div>
       </div>
 
-      {loading ? <div className="card" style={{ fontSize: 13, color: "var(--text-2)" }}>正在取历史…</div> : null}
+      {loading ? (
+        <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 13, color: "var(--text-2)" }}>
+          <Spinner size={16} />
+          正在取历史…
+        </div>
+      ) : null}
 
       {!loading && detailDay ? (
         <div className="card">

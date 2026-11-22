@@ -11,6 +11,28 @@ const QUEUE_KEY = "gmr.queue.v1";
 
 export type Role = "family" | "admin";
 
+/* ---------- 网络活动计数：给顶部的细进度条用 ---------- */
+let activeRequests = 0;
+const activityListeners = new Set<(n: number) => void>();
+
+export function subscribeActivity(fn: (n: number) => void) {
+  activityListeners.add(fn);
+  fn(activeRequests);
+  return () => {
+    activityListeners.delete(fn);
+  };
+}
+
+function beginActivity() {
+  activeRequests += 1;
+  activityListeners.forEach((f) => f(activeRequests));
+}
+
+function endActivity() {
+  activeRequests = Math.max(0, activeRequests - 1);
+  activityListeners.forEach((f) => f(activeRequests));
+}
+
 export type ApiError = { ok: false; error: string; message: string; lockedUntil?: string };
 
 function readJson<T>(key: string, fallback: T): T {
@@ -106,7 +128,7 @@ async function request<T>(
     ...(init.headers as Record<string, string> | undefined),
   };
   if (token) headers.authorization = `Bearer ${token}`;
-
+  beginActivity();
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...init,
@@ -132,6 +154,8 @@ async function request<T>(
     return { ok: true, data: data as T };
   } catch {
     return { ok: false, error: "offline", message: "当前没有网络" };
+  } finally {
+    endActivity();
   }
 }
 

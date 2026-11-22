@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, clearQueue, clearSession, getToken, pushQueue, readCache, readQueue, writeCache } from "./api";
 import type { ApiError, QueuedWrite, RecordPayload } from "./api";
-import { setServerTime } from "./clock";
+import { now as nowDate, setServerTime } from "./clock";
 import { nowParts, todayKey } from "./time";
 import type { Bootstrap, TaskRecord } from "./types";
 
@@ -27,10 +27,18 @@ export function useAppData() {
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const dayRef = useRef<string>("");
+  const toastTimer = useRef<number>(0);
 
   const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 2600);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    setToast(null);
+    // 先清空再上屏，同一条提示连着出现两次也有动画
+    window.setTimeout(() => setToast(msg), 16);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2800);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
   }, []);
 
   const load = useCallback(
@@ -230,10 +238,14 @@ async function sendQueued(item: QueuedWrite): Promise<{ ok: true } | ApiError> {
   return res.ok ? { ok: true } : res;
 }
 
+/**
+ * 每秒走一次的时钟。用 now() 而不是 new Date()：
+ * 拿过服务端时间之后，本机时间不准也不会把倒计时带偏。
+ */
 export function useNow(intervalMs = 1000) {
-  const [tick, setTick] = useState(() => nowParts());
+  const [tick, setTick] = useState(() => nowParts(nowDate()));
   useEffect(() => {
-    const t = window.setInterval(() => setTick(nowParts()), intervalMs);
+    const t = window.setInterval(() => setTick(nowParts(nowDate())), intervalMs);
     return () => window.clearInterval(t);
   }, [intervalMs]);
   return tick;

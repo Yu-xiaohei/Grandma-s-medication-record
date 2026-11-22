@@ -186,3 +186,67 @@ export function IconByName({ name, size = 18 }: { name: keyof typeof MAP; size?:
   const C = MAP[name];
   return <C size={size} />;
 }
+/* ---------- 后台图标补充 ---------- */
+export function IconEye({ size = 18, ...rest }: P) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12S18 18.2 12 18.2 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+export function IconEyeOff({ size = 18, ...rest }: P) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="M4 4.5l15.5 15" />
+      <path d="M9.6 6.3A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.3 3.9" />
+      <path d="M6.1 7.9A17 17 0 0 0 2.5 12S6 18 12 18a9.5 9.5 0 0 0 3.4-.6" />
+      <path d="M10 10.2a2.8 2.8 0 0 0 3.8 3.8" />
+    </svg>
+  );
+}
+
+export function IconTrash({ size = 18, ...rest }: P) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="M4.5 7h15" />
+      <path d="M9.5 4.5h5" />
+      <path d="M6.5 7l.8 11.3a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9L17.5 7" />
+      <path d="M10.2 10.6v6M13.8 10.6v6" />
+    </svg>
+  );
+}
+
+export function IconPlus({ size = 18, ...rest }: P) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="M12 5.5v13M5.5 12h13" />
+    </svg>
+  );
+}
+
+export function IconMinus({ size = 18, ...rest }: P) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="M5.5 12h13" />
+    </svg>
+  );
+}
+
+export function IconChevronDown({ size = 18, ...rest }: P) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="M5 9l7 7 7-7" />
+    </svg>
+  );
+}
+
+export function IconTag({ size = 18, ...rest }: P) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="M3.8 12.4V4.6a.8.8 0 0 1 .8-.8h7.8l8 8a1.4 1.4 0 0 1 0 2l-5.4 5.4a1.4 1.4 0 0 1-2 0z" />
+      <path d="M8 8h.01" />
+    </svg>
+  );
+}

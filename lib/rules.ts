@@ -89,3 +89,36 @@ export function allItems(task: Task): Record<string, "done" | "skipped" | "none"
   for (const item of task.items) out[item.id] = "done";
   return out;
 }
+
+/** 自动跳过后写入的备注；前后端必须完全一致，界面靠它识别「已跳过」 */
+export const AUTO_MISS_NOTE = "超过时间一直没打卡，自动记为未完成";
+
+/**
+ * 这一项在几点几分会被自动跳过（按一天中的分钟数算，含小数）。
+ * 没有下一项时返回 null —— 最后一项永远不自动跳过。
+ */
+export function autoSkipAt(
+  task: Task,
+  next: Task | null,
+  remainPct: number = AUTO_MISS_REMAIN_PCT,
+): number | null {
+  if (!next) return null;
+  const start = minutesOfDay(task.time);
+  const end = minutesOfDay(next.time);
+  if (end <= start) return null;
+  const gap = end - start;
+  const pct = Math.min(95, Math.max(30, Number(remainPct) || AUTO_MISS_REMAIN_PCT));
+  const elapsedNeeded = Math.max(MISSED_UNLOCK_SEC / 60, gap * (1 - pct / 100));
+  return start + elapsedNeeded;
+}
+
+/** 这一项此刻是否已过了自动跳过的点 */
+export function isAutoSkippedNow(
+  task: Task,
+  next: Task | null,
+  p: NowParts,
+  remainPct: number = AUTO_MISS_REMAIN_PCT,
+): boolean {
+  const at = autoSkipAt(task, next, remainPct);
+  return at != null && nowMinutes(p) >= at;
+}

@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NowParts } from "@/lib/time";
 import { secondsUntil } from "@/lib/time";
-import { MISSED_UNLOCK_SEC, canConfirm, needsEarlyConfirm, tally } from "@/lib/rules";
+import { AUTO_MISS_NOTE, MISSED_UNLOCK_SEC, canConfirm, needsEarlyConfirm, tally } from "@/lib/rules";
 import type { ItemState, Task, TaskRecord } from "@/lib/types";
-import { IconAlert, IconClose } from "./Icons";
+import { IconAlert, IconClose, IconLock } from "./Icons";
 
 type Props = {
   task: Task;
@@ -131,13 +131,20 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
   const savedDone = record?.status === "done";
   const savedMissed = record?.status === "missed";
 
+  const isAutoSkipped = record?.status === "missed" && record.note === AUTO_MISS_NOTE;
+
   const hint = useMemo(() => {
+    if (locked && !savedDone) {
+      return isAutoSkipped
+        ? "这一项已经自动跳过，前台不能再改了。要补记请让家里人在后台改。"
+        : "这一项已经锁定，要修改请让家里人在后台改。";
+    }
     if (savedDone) return "这一项已经记好了。有变化可以撤销重记。";
     if (savedMissed) return "这一项记为未完成。如果后来补吃了，可以撤销重记。";
     if (sec > 5 * 60) return "还没到时间。到时间前点“完成”会先确认一次。";
     if (sec > -MISSED_UNLOCK_SEC) return "现在正好是这一项的时间，做完就点“完成”。";
     return "已经过时间了。做了就点“完成”，没做就点“未完成”。";
-  }, [savedDone, savedMissed, sec]);
+  }, [locked, savedDone, savedMissed, sec, isAutoSkipped]);
 
   return (
     <div className="scrim" role="dialog" aria-modal="true" aria-labelledby="sheet-title" onClick={(e) => {
@@ -158,6 +165,12 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
         </div>
 
         <div className="sheet-body">
+          {locked && !savedDone ? (
+            <div className="alert-line" style={{ marginBottom: 12, background: "rgba(120,132,148,0.14)", borderColor: "rgba(120,132,148,0.3)", color: "var(--text-2)" }}>
+              <IconLock size={17} />
+              <span>已过时间，这一项只能在后台修改</span>
+            </div>
+          ) : null}
           {task.note ? (
             <div className="alert-line" style={{ marginBottom: 12 }}>
               <IconAlert size={17} />
@@ -200,7 +213,7 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
                       onClick={() => skip(item.id)}
                       aria-pressed={st === "skipped"}
                     >
-                      {st === "skipped" ? "恢复" : "暂缓"}
+                      {st === "skipped" ? "恢复" : "暂时不吃"}
                     </button>
                   ) : null}
                 </div>
@@ -211,7 +224,7 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
           <div className="progress-line">
             <span>
               已勾 {sum.done}
-              {sum.skipped > 0 ? ` · 暂缓 ${sum.skipped}` : ""} / 共 {sum.total}
+              {sum.skipped > 0 ? ` · 暂时不吃 ${sum.skipped}` : ""} / 共 {sum.total}
             </span>
             <span className="progress-track" aria-hidden="true">
               <span
@@ -239,7 +252,7 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
             </div>
           ) : null}
 
-          {record ? (
+          {record && !locked ? (
             <button type="button" className="btn btn-quiet btn-block" style={{ marginTop: 4 }} onClick={doClear}>
               撤销这一项记录
             </button>
@@ -250,7 +263,7 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
           <p style={{ margin: "0 0 10px", fontSize: 12.5, lineHeight: 1.5, color: "#7b8b9c", textAlign: "center" }}>{hint}</p>
           <div className="actions" style={{ marginTop: 0 }}>
             <button type="button" className="btn btn-danger" onClick={doMissed} disabled={locked || !canMissed || savedMissed}>
-              {savedMissed ? "已记未完成" : canMissed ? "未完成" : "未完成（到时间 5 分钟后可点）"}
+              {savedMissed ? "已记未完成" : "未完成"}
             </button>
             <button type="button" className="btn btn-primary" onClick={doDone} disabled={locked || savedDone || !allSet}>
               {savedDone ? "已记完成" : allSet ? "完成" : "请先勾选"}
@@ -258,7 +271,7 @@ export function TaskSheet({ task, record, now, vitalsEnabled, editable, onClose,
           </div>
           {!allSet && !savedDone && !locked ? (
             <p style={{ margin: "8px 0 0", fontSize: 12, color: "#b05a00", textAlign: "center", fontWeight: 600 }}>
-              每一项都要勾选或点“暂缓”，才能点完成
+              每一项都要勾选或点“暂时不吃”，才能点完成
             </p>
           ) : null}
         </div>

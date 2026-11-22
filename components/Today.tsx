@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, clearSession } from "@/lib/api";
 import type { RecordPayload } from "@/lib/api";
 import { SAFETY_RULES } from "@/lib/schedule";
-import { autoMissedAt, canMarkMissed, needsEarlyConfirm, phaseOf, tally } from "@/lib/rules";
+import { AUTO_MISS_NOTE, autoMissedAt, phaseOf, tally } from "@/lib/rules";
 import { dayLabel, formatCountdown, secondsUntil } from "@/lib/time";
 import { useAppData, useNow } from "@/lib/useAppData";
 import type { ItemState, Task, TaskRecord } from "@/lib/types";
@@ -14,7 +14,6 @@ import { IconAlert, IconByName, IconChevron, IconClock, IconLock } from "./Icons
 import { TaskSheet } from "./TaskSheet";
 
 const DISMISS_KEY = "gmr.dismissedAnn.v1";
-const AUTO_MISS_NOTE = "超过时间一直没打卡，自动记为未完成";
 
 /** 自动跳过时给界面用的临时记录（还没写进云端时也要按「未完成」显示） */
 function autoRecord(day: string, task: Task): TaskRecord {
@@ -115,6 +114,23 @@ export function Today() {
     const upcoming = pending.find((t) => secondsUntil(t.time, now) >= -30 * 60);
     return upcoming ?? pending[0];
   }, [ordered, effective, data, now, openId]);
+
+  /** 这一项是不是已经过了自动跳过的点（过了就只能看，不能在前台改） */
+  const lockedIds = useMemo(() => {
+    if (!data) return new Set<string>();
+    const out = new Set<string>();
+    for (let i = 0; i < ordered.length; i += 1) {
+      const t = ordered[i];
+      const r = effective[`${data.day}|${t.id}`];
+      if (r?.status === "done") continue;
+      if (r?.status === "missed") {
+        out.add(t.id);
+        continue;
+      }
+      if (autoMissedAt(t, ordered[i + 1] ?? null, now, data.settings.autoSkipRemainPct)) out.add(t.id);
+    }
+    return out;
+  }, [ordered, effective, data, now]);
 
   const openTask = openId ? ordered.find((t) => t.id === openId) ?? null : null;
   const openRecord = openTask && data ? effective[`${data.day}|${openTask.id}`] : undefined;
@@ -230,14 +246,24 @@ export function Today() {
         </div>
       </div>
 
-      <main className="shell">
+      <main className="shell page-enter">
         {shown.length > 0 ? <Banner items={shown} onDismiss={dismissAnn} /> : null}
 
         {/* 当前任务主卡 */}
-        <section className="glass hero" style={{ marginTop: 12 }}>
+        <section className={`glass hero tone-${focusPhase}`} style={{ marginTop: 12 }}>
           <div className="hero-eyebrow">
             <span className="dot" aria-hidden="true" />
-            {focusPhase === "done" ? (missedCount > 0 ? "这一项已完成" : "今天全部记好了") : focusPhase === "missed" ? "这一项记为未完成" : "现在这一项"}
+            {focusPhase === "done"
+              ? missedCount > 0
+                ? "这一项已完成"
+                : "今天全部记好了"
+              : focusPhase === "missed"
+              ? "这一项记为未完成"
+              : focusPhase === "upcoming"
+              ? "接下来这一项"
+              : focusPhase === "overdue"
+              ? "这一项已经过了时间"
+              : "现在这一项"}
           </div>
 
           <div className="hero-time">
@@ -307,26 +333,24 @@ export function Today() {
           </div>
         </section>
 
-        {/* 今日进度 */}
-        <section className="glass" style={{ marginTop: 12, padding: "14px 16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: "#46586b" }}>
-            <span>今天完成 {doneCount} / {ordered.length}</span>
-            <span>{missedCount > 0 ? `未完成 ${missedCount}` : "全部正常"}</span>
-          </div>
-          <div className="progress-track" style={{ marginTop: 8, height: 8 }} aria-hidden="true">
-            <span
-              className="progress-fill"
-              style={{ width: `${(doneCount / ordered.length) * 100}%`, display: "block" }}
-            />
-          </div>
-        </section>
-
-        {/* 今天的全部时间点 */}
-        <div className="section-head">
+        {/* 今日进度：并进标题行，只占一行 */}
+        <div className="section-head list-head">
           <span className="section-title">今天的安排</span>
-          <span className="section-meta">{ordered.length} 项</span>
+          <span className="list-meta">
+            <span className="pc-count">
+              <b>{doneCount}</b>/{ordered.length}
+            </span>
+            <span className="progress-track" aria-hidden="true">
+              <span
+                className="progress-fill"
+                style={{ width: `${(doneCount / ordered.length) * 100}%`, display: "block" }}
+              />
+            </span>
+            <span className="pc-count" style={{ color: missedCount > 0 ? "var(--rose)" : undefined }}>
+              {missedCount > 0 ? `未完成 ${missedCount}` : "全部正常"}
+            </span>
+          </span>
         </div>
-
         {ordered.map((t) => {
           const r = effective[`${data.day}|${t.id}`];
           const ph = phaseOf(t, r, now);
@@ -344,11 +368,14 @@ export function Today() {
               : ph === "overdue"
               ? "已过时"
               : "";
+          const locked = lockedIds.has(t.id);
           return (
             <button
               key={t.id}
               type="button"
-              className={`row-card ${ph === "done" ? "is-done" : ""}`}
+              className={`row-card ${ph === "done" ? "is-done" : ""} ${ph === "due" ? "is-now" : ""} ${
+                locked && ph !== "done" ? "is-locked" : ""
+              }`}
               onClick={() => setOpenId(t.id)}
             >
               <span className="row-time">{t.time}</span>
@@ -356,7 +383,7 @@ export function Today() {
                 <span className="row-title">{t.title}</span>
                 <span className="row-sub">
                   {ph === "done" && sum.skipped > 0
-                    ? `已完成 · 其中 ${sum.skipped} 项暂缓`
+                    ? `已完成 · 其中 ${sum.skipped} 项暂时不吃`
                     : t.items.map((i) => i.label).join(" · ")}
                 </span>
               </span>
@@ -404,7 +431,7 @@ export function Today() {
           record={openRecord}
           now={now}
           vitalsEnabled={data.settings.vitalsEnabled}
-          editable={data.canEditToday}
+          editable={data.canEditToday && !lockedIds.has(openTask.id)}
           onClose={() => setOpenId(null)}
           onSave={(p) => void onSave(openTask, p)}
           onClear={() => void onClear(openTask)}

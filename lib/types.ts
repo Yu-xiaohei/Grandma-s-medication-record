@@ -36,7 +36,12 @@ export type Settings = {
   announcementEnabled: boolean;
   /** 距离下一项只剩这个百分比（默认 70%）还没打卡，就自动记为未完成 */
   autoSkipRemainPct: number;
+  /** 后台可选的标签预设，编辑条目时下拉选择 */
+  tagPresets?: string[];
 };
+
+/** 标签预设的出厂值 */
+export const DEFAULT_TAGS = ["整吞", "随餐", "看心率", "看血压", "药液不占水", "漱口"];
 
 export type Announcement = {
   id: number;
@@ -63,4 +68,5 @@ export const DEFAULT_SETTINGS: Settings = {
   pinEnabled: true,
   announcementEnabled: true,
   autoSkipRemainPct: 70,
+  tagPresets: DEFAULT_TAGS,
 };

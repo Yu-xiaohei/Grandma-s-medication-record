@@ -1,4 +1,6 @@
 import { DEFAULT_TASKS } from "../../lib/schedule";
+import { AUTO_MISS_NOTE, autoSkipAt } from "../../lib/rules";
+import { DEFAULT_TAGS } from "../../lib/types";
 import type { Settings, Task, TaskRecord } from "../../lib/types";
 
 type Env = {
@@ -162,6 +164,7 @@ const DEFAULT_SETTINGS: Settings = {
   pinEnabled: true,
   announcementEnabled: true,
   autoSkipRemainPct: 70,
+  tagPresets: DEFAULT_TAGS,
 };
 
 async function readSettings(env: Env): Promise<Settings> {
@@ -219,6 +222,32 @@ async function tasksForDay(env: Env, day: string): Promise<Task[]> {
   } catch {
     return DEFAULT_TASKS;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* 服务端兜底：整天没人打开前台，也要把「已跳过」记下来                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 按前端同一条规则（距下一项只剩 remainPct% 的时间）补记「未完成」。
+ * 只补今天，只插入不覆盖：已经有记录（前台打过卡、后台补录过）的一律不动。
+ */
+async function backfillAutoMissed(env: Env, day: string, tasks: Task[], settings: Settings) {
+  const nowMin = shanghaiParts().minutes;
+  const sorted = [...tasks].sort((a, b) => a.time.localeCompare(b.time));
+  const targets: Task[] = [];
+  for (let i = 0; i < sorted.length; i += 1) {
+    const at = autoSkipAt(sorted[i], sorted[i + 1] ?? null, settings.autoSkipRemainPct);
+    if (at != null && nowMin >= at) targets.push(sorted[i]);
+  }
+  if (targets.length === 0) return;
+  const now = new Date().toISOString();
+  const stmt = env.DB.prepare(
+    `INSERT INTO records (day, task_id, status, items, vitals, note, source, updated_at, updated_by)
+     VALUES (?, ?, 'missed', '{}', NULL, ?, 'front', ?, 'system')
+     ON CONFLICT(day, task_id) DO NOTHING`,
+  );
+  await env.DB.batch(targets.map((t) => stmt.bind(day, t.id, AUTO_MISS_NOTE, now)));
 }
 
 /* ------------------------------------------------------------------ */
@@ -485,6 +514,9 @@ async function route(request: Request, env: Env, path: string, url: URL): Promis
     const day = DATE_RE.test(requested) ? requested : today;
     const tasks = await tasksForDay(env, day);
 
+    // 整天没人打开过前台时，后台也要能看到该跳过的项
+    if (day === today) await backfillAutoMissed(env, day, tasks, settings);
+
     const [{ results: records }, { results: anns }] = await Promise.all([
       env.DB.prepare("SELECT * FROM records WHERE day = ? ORDER BY task_id")
         .bind(day)
@@ -689,6 +721,19 @@ async function route(request: Request, env: Env, path: string, url: URL): Promis
       const pct = Number(body.autoSkipRemainPct);
       if (!Number.isFinite(pct) || pct < 30 || pct > 95) return bad("bad_pct", "自动跳过比例要在 30~95 之间");
       await writeSetting(env, "autoSkipRemainPct", Math.round(pct));
+    }
+    if (body.tagPresets !== undefined) {
+      if (!Array.isArray(body.tagPresets) || body.tagPresets.length > 40) {
+        return bad("bad_tags", "标签最多 40 个");
+      }
+      const tags: string[] = [];
+      for (const raw of body.tagPresets) {
+        const t = String(raw ?? "").trim();
+        if (!t) continue;
+        if (t.length > 20) return bad("bad_tags", "单个标签最多 20 个字");
+        if (!tags.includes(t)) tags.push(t);
+      }
+      await writeSetting(env, "tagPresets", tags);
     }
     return json({ ok: true, settings: await readSettings(env) });
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, clearQueue, clearSession, dropCachedRecord, getToken, pushQueue, readCache, readQueue, writeCache } from "./api";
+import { api, clearQueue, clearSession, dropCachedRecord, hasSession, pushQueue, readCache, readQueue, writeCache } from "./api";
 import type { ApiError, QueuedWrite, RecordPayload } from "./api";
 import { now as nowDate, setServerTime } from "./clock";
 import { nowParts, todayKey } from "./time";
@@ -46,18 +46,15 @@ export function useAppData() {
       const day = todayKey();
       const cache = readCache();
 
-      // 先上缓存：断网、弱网、冷启动都能立刻看到内容
-      if (cache && (day === cache.day || !getToken())) {
-        setState((prev) => (prev.kind === "ready" ? prev : { kind: "ready", data: cache, offline: false, stale: true }));
+      // 没有有效口令就一定要先过口令门：缓存只在「本机输过口令」之后才算数
+      if (!hasSession("family")) {
+        setState({ kind: "gate" });
+        return;
       }
 
-      if (!getToken()) {
-        if (cache) {
-          setState({ kind: "ready", data: cache, offline: true, stale: true });
-        } else {
-          setState({ kind: "gate" });
-        }
-        return;
+      // 先上缓存：断网、弱网、冷启动都能立刻看到内容
+      if (cache && day === cache.day) {
+        setState((prev) => (prev.kind === "ready" ? prev : { kind: "ready", data: cache, offline: false, stale: true }));
       }
 
       const res = await api.bootstrap(day);
@@ -74,7 +71,7 @@ export function useAppData() {
 
       const err = res as ApiError;
       if (err.error === "unauthorized") {
-        clearSession();
+        clearSession("family");
         setState({ kind: "gate" });
         return;
       }
@@ -130,7 +127,7 @@ export function useAppData() {
 
   const flushQueue = useCallback(async () => {
     const queue = readQueue();
-    if (queue.length === 0 || !getToken()) return;
+    if (queue.length === 0 || !hasSession("family")) return;
     setSyncing(true);
     let failedAt = -1;
     for (let i = 0; i < queue.length; i += 1) {

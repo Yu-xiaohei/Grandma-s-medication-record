@@ -4,8 +4,13 @@ import type { Announcement, Bootstrap, Settings, Task, TaskRecord } from "./type
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
 
-const TOKEN_KEY = "gmr.token.v1";
-const ROLE_KEY = "gmr.role.v1";
+/** 前台与后台各存各的 token：后台退出/过期绝不能把前台的登录态一起清掉 */
+const TOKEN_KEYS: Record<Role, string> = {
+  family: "gmr.token.family.v1",
+  admin: "gmr.token.admin.v1",
+};
+const LEGACY_TOKEN_KEY = "gmr.token.v1";
+const LEGACY_ROLE_KEY = "gmr.role.v1";
 const CACHE_KEY = "gmr.cache.v1";
 const QUEUE_KEY = "gmr.queue.v1";
 
@@ -54,20 +59,50 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
-export function getToken(): string | null {
-  return readJson<string | null>(TOKEN_KEY, null);
+/** 旧版把前后台 token 存在同一个键里，首次读取时就地迁移 */
+function migrateLegacy(role: Role): string | null {
+  if (typeof window === "undefined") return null;
+  const legacyRole = readJson<Role | null>(LEGACY_ROLE_KEY, null);
+  const legacyToken = readJson<string | null>(LEGACY_TOKEN_KEY, null);
+  if (!legacyToken || legacyRole !== role) return null;
+  writeJson(TOKEN_KEYS[role], legacyToken);
+  window.localStorage.removeItem(LEGACY_TOKEN_KEY);
+  window.localStorage.removeItem(LEGACY_ROLE_KEY);
+  return legacyToken;
 }
-export function getRole(): Role | null {
-  return readJson<Role | null>(ROLE_KEY, null);
+
+export function getToken(role: Role = "family"): string | null {
+  return readJson<string | null>(TOKEN_KEYS[role], null) ?? migrateLegacy(role);
+}
+/** token 里的到期时间；格式是 v1.<role>.<exp>.<sig> */
+function tokenExpiresAt(token: string): number | null {
+  const parts = token.split(".");
+  if (parts.length < 4) return null;
+  const exp = Number(parts[2]);
+  return Number.isFinite(exp) ? exp * 1000 : null;
+}
+/** 离线时也要判断：过期了就当没有，不能让旧 token 一直开着口令门 */
+export function hasSession(role: Role): boolean {
+  const token = getToken(role);
+  if (!token) return false;
+  const expiresAt = tokenExpiresAt(token);
+  if (expiresAt !== null && expiresAt <= Date.now()) {
+    clearSession(role);
+    return false;
+  }
+  return true;
 }
 export function setSession(token: string, role: Role) {
-  writeJson(TOKEN_KEY, token);
-  writeJson(ROLE_KEY, role);
+  writeJson(TOKEN_KEYS[role], token);
 }
-export function clearSession() {
+export function clearSession(role: Role) {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(ROLE_KEY);
+  window.localStorage.removeItem(TOKEN_KEYS[role]);
+  // 清掉同角色的旧键，避免迁移逻辑把刚退出的 token 又搬回来
+  if (readJson<Role | null>(LEGACY_ROLE_KEY, null) === role) {
+    window.localStorage.removeItem(LEGACY_TOKEN_KEY);
+    window.localStorage.removeItem(LEGACY_ROLE_KEY);
+  }
 }
 
 export function readCache(): Bootstrap | null {
@@ -117,12 +152,13 @@ export type RecordPayload = {
 async function request<T>(
   path: string,
   init: RequestInit = {},
+  role: Role = "family",
 ): Promise<{ ok: true; data: T } | ApiError> {
   // 没配后端地址时给一句人话，别让老人对着「网络请求失败」发愁
   if (!API_BASE) {
     return { ok: false, error: "unconfigured", message: "网站还没连上后台，请让家里人配置一次" };
   }
-  const token = getToken();
+  const token = getToken(role);
   const headers: Record<string, string> = {
     "content-type": "application/json",
     ...(init.headers as Record<string, string> | undefined),
@@ -137,12 +173,12 @@ async function request<T>(
     });
     // 管理员 12 小时滑动续期：后端把新 token 放在响应头里
     const renewed = res.headers.get("x-renew-token");
-    if (renewed) setSession(renewed, "admin");
+    if (renewed && role === "admin") setSession(renewed, "admin");
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (res.status === 401 && path !== "/api/auth/pin" && path !== "/api/auth/admin") {
-        clearSession();
+        clearSession(role);
       }
       return {
         ok: false,
@@ -174,68 +210,74 @@ export const api = {
     });
   },
 
-  async bootstrap(day: string) {
-    return request<Bootstrap>(`/api/bootstrap?day=${encodeURIComponent(day)}`);
+  async bootstrap(day: string, role: Role = "family") {
+    return request<Bootstrap>(`/api/bootstrap?day=${encodeURIComponent(day)}`, {}, role);
   },
 
-  async saveRecord(payload: RecordPayload) {
-    return request<{ record: TaskRecord }>("/api/records", {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
+  async saveRecord(payload: RecordPayload, role: Role = "family") {
+    return request<{ record: TaskRecord }>(
+      "/api/records",
+      { method: "PUT", body: JSON.stringify(payload) },
+      role,
+    );
   },
 
-  async deleteRecord(day: string, taskId: string) {
+  async deleteRecord(day: string, taskId: string, role: Role = "family") {
     return request<{ ok: true }>(
       `/api/records?day=${encodeURIComponent(day)}&taskId=${encodeURIComponent(taskId)}`,
       { method: "DELETE" },
+      role,
     );
   },
 
   async saveTasks(tasks: Task[], effectiveFrom: string) {
-    return request<{ tasks: Task[] }>("/api/tasks", {
-      method: "PUT",
-      body: JSON.stringify({ effectiveFrom, tasks }),
-    });
+    return request<{ tasks: Task[] }>(
+      "/api/tasks",
+      { method: "PUT", body: JSON.stringify({ effectiveFrom, tasks }) },
+      "admin",
+    );
   },
 
   async saveSettings(settings: Settings, day: string) {
-    return request<{ settings: Settings }>("/api/settings", {
-      method: "PUT",
-      body: JSON.stringify({ ...settings, day }),
-    });
+    return request<{ settings: Settings }>(
+      "/api/settings",
+      { method: "PUT", body: JSON.stringify({ ...settings, day }) },
+      "admin",
+    );
   },
 
   async saveAnnouncement(payload: Omit<Announcement, "id" | "createdAt">) {
-    return request<{ announcement: Announcement }>("/api/announcements", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    return request<{ announcement: Announcement }>(
+      "/api/announcements",
+      { method: "POST", body: JSON.stringify(payload) },
+      "admin",
+    );
   },
 
   async archiveAnnouncement(id: number) {
-    return request<{ ok: true }>(`/api/announcements/${id}`, { method: "DELETE" });
+    return request<{ ok: true }>(`/api/announcements/${id}`, { method: "DELETE" }, "admin");
   },
 
   async setPin(pin: string) {
-    return request<{ ok: true }>("/api/admin/pin", {
-      method: "POST",
-      body: JSON.stringify({ pin }),
-    });
+    return request<{ ok: true }>("/api/admin/pin", { method: "POST", body: JSON.stringify({ pin }) }, "admin");
   },
 
   async changePassword(password: string) {
-    return request<{ ok: true }>("/api/admin/password", {
-      method: "POST",
-      body: JSON.stringify({ password }),
-    });
+    return request<{ ok: true }>(
+      "/api/admin/password",
+      { method: "POST", body: JSON.stringify({ password }) },
+      "admin",
+    );
   },
 
   async history(from: string, to: string) {
     return request<{ days: string[]; records: TaskRecord[]; tasksByDay: Record<string, Task[]> }>(
       `/api/history?from=${from}&to=${to}`,
+      {},
+      "admin",
     );
   },
 };
 
 export const isConfigured = API_BASE.length > 0;
+

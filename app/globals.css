@@ -920,9 +920,21 @@ html[data-reduce-motion="1"] * { animation-duration: 0.001ms !important; transit
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 html[data-reduce-motion="1"] .save-bar { animation: none !important; }
-.save-bar .sv-hint { flex: 1; font-size: 12px; color: var(--text-3); font-weight: 650; }
+.save-bar .sv-hint { flex: 1; min-width: 0; font-size: 12px; color: var(--text-3); font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .save-bar .sv-hint.dirty { color: var(--amber); }
 .save-bar .btn { min-height: 42px; padding: 0 20px; flex: none; font-size: 14.5px; border-radius: 12px; }
+
+/* 后台有新版本时的轻提示：不打断编辑，点一下才刷新 */
+.sw-refresh {
+  position: fixed; left: 50%; bottom: calc(12px + var(--safe-bottom));
+  transform: translateX(-50%); z-index: 96;
+  min-height: 44px; padding: 0 18px; border-radius: 22px;
+  font-size: 13.5px; font-weight: 700; color: #fff;
+  background: var(--accent-deep, #2563a8);
+  box-shadow: 0 14px 30px -14px rgba(8, 24, 40, 0.55);
+  animation: toastIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.sw-refresh:active { transform: translateX(-50%) scale(0.98); }
 
 /* 密码可见 */
 .pw-wrap { position: relative; }
@@ -1136,3 +1148,5 @@ html[data-reduce-motion="1"] .net-bar span { animation: none !important; transfo
 /* 面板本身别带 transform，否则固定保存条会跟着面板定位 */
 .tab-panel.has-savebar > *:not(.save-bar) { animation: pageIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
 html[data-reduce-motion="1"] .tab-panel.has-savebar > * { animation: none !important; }
+
+

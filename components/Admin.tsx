@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, clearSession, getRole, getToken, setSession } from "@/lib/api";
+import { api, clearSession, hasSession, setSession } from "@/lib/api";
 import { addDays, dayLabel, todayKey } from "@/lib/time";
 import { AUTO_MISS_NOTE } from "@/lib/rules";
 import type { Announcement, Settings, Task, TaskItem, TaskRecord } from "@/lib/types";
@@ -52,13 +52,12 @@ export function Admin() {
 
   /** 必须稳定：它进了 AdminShell 的 load 依赖里，变一次就会无限重取 */
   const logout = useCallback(() => {
-    clearSession();
+    clearSession("admin");
     setAuthed(false);
   }, []);
 
   useEffect(() => {
-    const token = getToken();
-    if (token && getRole() === "admin") setAuthed(true);
+    if (hasSession("admin")) setAuthed(true);
     setChecking(false);
   }, []);
 
@@ -213,7 +212,7 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
   const load = useCallback(
     async (target: string) => {
       setLoading(true);
-      const res = await api.bootstrap(target);
+      const res = await api.bootstrap(target, "admin");
       setLoading(false);
       if (!res.ok) {
         if (res.error === "unauthorized") onLogout();
@@ -390,7 +389,7 @@ function TodayRecords({
   const commit = async (t: Task) => {
     if (saving) return;
     setSaving(true);
-    const res = await api.saveRecord({ day, taskId: t.id, status, items, note: note.trim() || null, source: "admin" });
+    const res = await api.saveRecord({ day, taskId: t.id, status, items, note: note.trim() || null, source: "admin" }, "admin");
     setSaving(false);
     if (!res.ok) {
       notify("err", res.message);
@@ -416,7 +415,7 @@ function TodayRecords({
   const clear = async (t: Task) => {
     if (saving) return;
     setSaving(true);
-    const res = await api.deleteRecord(day, t.id);
+    const res = await api.deleteRecord(day, t.id, "admin");
     setSaving(false);
     if (!res.ok) {
       notify("err", res.message);
@@ -1339,7 +1338,7 @@ function NoticeEditor({
 
   // 只拿公告列表。别再顺手回写 settings —— 那会把正在改的开关冲回旧值。
   const refresh = useCallback(async () => {
-    const fresh = await api.bootstrap(todayKey());
+    const fresh = await api.bootstrap(todayKey(), "admin");
     if (fresh.ok) setAnns(fresh.data.announcements);
   }, []);
 
@@ -1750,3 +1749,4 @@ function Toggle({ t, d, on, set }: { t: string; d: string; on: boolean; set: (v:
     </div>
   );
 }
+

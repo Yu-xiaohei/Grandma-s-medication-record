@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, clearSession } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { RecordPayload } from "@/lib/api";
 import { SAFETY_RULES } from "@/lib/schedule";
 import { AUTO_MISS_NOTE, autoMissedAt, phaseOf, tally } from "@/lib/rules";
